@@ -1,0 +1,72 @@
+# ---- OS / Editor cruft ----
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*.orig
+*.bak
+
+# VS Code
+.vscode/
+
+# ---- Java / Build artifacts ----
+# Compiled class files
+*.class
+
+# Log files
+*.log
+logs/
+
+# Package files
+*.jar
+*.war
+*.nar
+*.ear
+*.zip
+*.tar.gz
+*.rar
+
+# Maven
+target/
+# Local Maven repository (optional - usually not ignored)
+# .m2/
+
+# Gradle (not used here, but harmless if present)
+.gradle/
+build/
+
+# ---- IDE settings ----
+# IntelliJ IDEA
+.idea/
+*.iml
+*.iws
+*.ipr
+
+# Eclipse
+.project
+.classpath
+.settings/
+
+# NetBeans
+nbproject/private/
+build/
+dist/
+nbbuild/
+.nb-gradle/
+
+# JetBrains HTTP Client requests (also covered in .idea/.gitignore)
+httpRequests/
+
+# ---- Others ----
+# Mac system files
+.AppleDouble
+.LSOverride
+
+# Windows image cache
+ehthumbs.db
+Desktop.ini
+
+# Temporary files
+*.tmp
+*.temp
+~$*
