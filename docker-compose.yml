@@ -1,0 +1,145 @@
+services:
+  # Infrastructure: Kafka + Zookeeper + Redis
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.5.0
+    container_name: zookeeper
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+      ZOOKEEPER_SYNC_LIMIT: 5
+      ZOOKEEPER_INIT_LIMIT: 10
+    ports:
+      - "2181:2181"
+    healthcheck:
+      test: ["CMD", "nc", "-z", "localhost", "2181"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  kafka:
+    image: confluentinc/cp-kafka:7.5.0
+    container_name: kafka
+    depends_on:
+      zookeeper:
+        condition: service_healthy
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,PLAINTEXT_HOST://localhost:29092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+      KAFKA_ZOOKEEPER_SESSION_TIMEOUT_MS: 60000
+      KAFKA_ZOOKEEPER_CONNECTION_TIMEOUT_MS: 60000
+    ports:
+      - "29092:29092"
+      - "9092:9092"
+    healthcheck:
+      test: ["CMD", "kafka-broker-api-versions", "--bootstrap-server", "localhost:9092"]
+      interval: 10s
+      timeout: 10s
+      retries: 10
+      start_period: 30s
+
+  redis:
+    image: redis:7-alpine
+    container_name: redis
+    ports:
+      - "6379:6379"
+    command: redis-server --appendonly yes
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  # Load-Balancer
+  load-balancer:
+    build:
+      context: .
+      dockerfile: load-balancer/Dockerfile
+    container_name: load-balancer
+    depends_on:
+      kafka:
+        condition: service_healthy
+    environment:
+      HTTP_PORT: 8081
+      KAFKA_BOOTSTRAP: kafka:9092
+      PUBLIC_DOMAIN_TEMPLATE: "ws://localhost:%d/ws"
+      RING_SECRET: "my-secret-key-for-demo"
+      RING_VNODES_PER_WEIGHT: 150
+      ALPHA: 0.4
+      BETA: 0.4
+      GAMMA: 0.2
+      DELTA: 2.0
+      L_SLO_MS: 500.0
+      CONN_PER_POD: 5000
+      MPS_PER_POD: 2500
+    ports:
+      - "8081:8081"
+
+  # Socket Node 1
+  socket-1:
+    build:
+      context: .
+      dockerfile: socket/Dockerfile
+    container_name: socket-1
+    depends_on:
+      kafka:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      load-balancer:
+        condition: service_started
+    environment:
+      NODE_ID: socket-node-1
+      PUBLIC_WS_URL: ws://localhost:8080/ws
+      HTTP_PORT: 8080
+      KAFKA_BOOTSTRAP: kafka:9092
+      REDIS_URL: redis://redis:6379
+      RING_SECRET: "my-secret-key-for-demo"
+      BUFFER_MAX: 100
+      RESUME_TTL_SEC: 3600
+      HANDSHAKE_RATE_LIMIT: 100
+      PER_CONN_BUFFER_SIZE: 256
+      HEARTBEAT_INTERVAL_SEC: 30
+      LOAD_BALANCER_URL: http://load-balancer:8081
+    ports:
+      - "8080:8080"
+
+  # Socket Node 2
+  socket-2:
+    build:
+      context: .
+      dockerfile: socket/Dockerfile
+    container_name: socket-2
+    depends_on:
+      kafka:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      load-balancer:
+        condition: service_started
+    environment:
+      NODE_ID: socket-node-2
+      PUBLIC_WS_URL: ws://localhost:8082/ws
+      HTTP_PORT: 8082
+      KAFKA_BOOTSTRAP: kafka:9092
+      REDIS_URL: redis://redis:6379
+      RING_SECRET: "my-secret-key-for-demo"
+      BUFFER_MAX: 100
+      RESUME_TTL_SEC: 3600
+      HANDSHAKE_RATE_LIMIT: 100
+      PER_CONN_BUFFER_SIZE: 256
+      HEARTBEAT_INTERVAL_SEC: 30
+      LOAD_BALANCER_URL: http://load-balancer:8081
+    ports:
+      - "8082:8082"
+
+networks:
+  default:
+    name: reactive-rtc-network
+    driver: bridge
+

@@ -1,0 +1,45 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    cluster: 'reactive-rtc'
+    environment: 'local'
+
+scrape_configs:
+  # Load-Balancer
+  - job_name: 'load-balancer'
+    metrics_path: '/metrics'
+    static_configs:
+      - targets: ['load-balancer:8081']
+        labels:
+          service: 'load-balancer'
+          component: 'control-plane'
+
+  # Socket Nodes
+  - job_name: 'socket-nodes'
+    metrics_path: '/metrics'
+    static_configs:
+      - targets:
+          - 'socket-1:8080'
+          - 'socket-2:8082'
+        labels:
+          service: 'socket'
+          component: 'websocket-server'
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: instance
+      - source_labels: [__address__]
+        regex: '(socket-[^:]+):.*'
+        target_label: node
+        replacement: '$1'
+
+
+
+
+
+
+
+
+
+
+

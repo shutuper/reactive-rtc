@@ -1,0 +1,24 @@
+# Grafana provisioning directory structure
+apiVersion: 1
+
+providers:
+  - name: 'default'
+    orgId: 1
+    folder: ''
+    type: file
+    disableDelete: false
+    updateIntervalSeconds: 10
+    allowUiUpdates: true
+    options:
+      path: /etc/grafana/provisioning/datasources
+
+
+
+
+
+
+
+
+
+
+

@@ -28,8 +28,10 @@ logs/
 
 # Maven
 target/
-# Local Maven repository (optional - usually not ignored)
-# .m2/
+# Local Maven repository used for sandboxed builds
+.m2-local/
+pom.xml.versionsBackup
+dependency-reduced-pom.xml
 
 # Gradle (not used here, but harmless if present)
 .gradle/
@@ -70,3 +72,25 @@ Desktop.ini
 *.tmp
 *.temp
 ~$*
+
+# ---- Docker / Container artifacts ----
+# Don't ignore Dockerfiles, but ignore runtime data
+.dockerignore
+docker-compose.override.yml
+.env.local
+.env.*.local
+
+# ---- Application runtime ----
+# Application logs and data
+data/
+*.pid
+*.seed
+*.pid.lock
+
+# ---- Test reports and coverage ----
+# JaCoCo
+*.exec
+*.ser
+# Test reports
+test-output/
+.pytest_cache/

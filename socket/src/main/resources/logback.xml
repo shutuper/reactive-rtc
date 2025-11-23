@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration>
+    <!-- Console appender with JSON format for production -->
+    <appender name="STDOUT" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder>
+            <pattern>%d{yyyy-MM-dd'T'HH:mm:ss.SSSXXX} %-5level [%thread] %logger{36} nodeId=%X{nodeId} userId=%X{userId} - %msg%n</pattern>
+        </encoder>
+    </appender>
+
+    <!-- Async appender for better performance -->
+    <appender name="ASYNC" class="ch.qos.logback.classic.AsyncAppender">
+        <queueSize>512</queueSize>
+        <discardingThreshold>0</discardingThreshold>
+        <appender-ref ref="STDOUT" />
+    </appender>
+
+    <root level="INFO">
+        <appender-ref ref="ASYNC" />
+    </root>
+
+    <!-- Application logs -->
+    <logger name="com.qqsuccubus" level="INFO" />
+
+    <!-- External libraries -->
+    <logger name="reactor.netty" level="WARN" />
+    <logger name="io.lettuce" level="WARN" />
+    <logger name="org.apache.kafka" level="WARN" />
+    <logger name="io.netty" level="WARN" />
+</configuration>
+

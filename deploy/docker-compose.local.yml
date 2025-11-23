@@ -1,0 +1,41 @@
+# Local development Docker Compose override
+# Usage: docker-compose -f docker-compose.yml -f docker-compose.local.yml up
+
+version: '3.8'
+
+services:
+  # Add debug ports and volume mounts for local development
+  socket-1:
+    volumes:
+      - ./socket/target:/app/target
+    environment:
+      JAVA_OPTS: "-Xdebug -Xrunjdwp:transport=dt_socket,server=y,suspend=n,address=*:5005"
+    ports:
+      - "5005:5005"  # Debug port
+
+  socket-2:
+    volumes:
+      - ./socket/target:/app/target
+    environment:
+      JAVA_OPTS: "-Xdebug -Xrunjdwp:transport=dt_socket,server=y,suspend=n,address=*:5006"
+    ports:
+      - "5006:5006"  # Debug port
+
+  load-balancer:
+    volumes:
+      - ./load-balancer/target:/app/target
+    environment:
+      JAVA_OPTS: "-Xdebug -Xrunjdwp:transport=dt_socket,server=y,suspend=n,address=*:5007"
+    ports:
+      - "5007:5007"  # Debug port
+
+
+
+
+
+
+
+
+
+
+
