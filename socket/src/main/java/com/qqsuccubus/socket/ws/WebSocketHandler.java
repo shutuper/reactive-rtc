@@ -2,6 +2,7 @@ package com.qqsuccubus.socket.ws;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.qqsuccubus.core.msg.Envelope;
+import com.qqsuccubus.core.util.BytesUtils;
 import com.qqsuccubus.core.util.JsonUtils;
 import com.qqsuccubus.socket.config.SocketConfig;
 import com.qqsuccubus.socket.kafka.IKafkaService;
@@ -77,8 +78,6 @@ public class WebSocketHandler {
 		// Create session
 		return sessionManager.createSession(clientId, resumeOffset)
 				.flatMap(session -> {
-					metricsService.recordHandshakeSuccess();
-
 					handleConnectionStateUpdates(inbound, outbound, clientId);
 
 					// Combined: send outbound and receive inbound in parallel
@@ -89,7 +88,6 @@ public class WebSocketHandler {
 				})
 				.onErrorResume(err -> {
 					log.error("WebSocket error for clientId {}", clientId, err);
-					metricsService.recordHandshakeFailure();
 					return outbound.sendClose();
 				});
 	}
@@ -115,7 +113,10 @@ public class WebSocketHandler {
 				Flux.just(toWelcomeMessage(clientId)),
 				sessionManager.getBufferedMessages(clientId, resumeOffset).map(JsonUtils::writeValueAsString),
 				session.getOutboundFlux().map(JsonUtils::writeValueAsString)
-		);
+		).doOnNext(message -> {
+			// Record outbound WebSocket traffic
+			metricsService.recordNetworkOutboundWs(BytesUtils.getBytesLength(message));
+		});
 	}
 
 	private Mono<Void> handleInboundMessages(WebsocketInbound inbound, String clientId) {
@@ -143,6 +144,9 @@ public class WebSocketHandler {
 	private Mono<Void> handleInboundMessage(String userId, String messageJson) {
 		try {
 			log.info("Processing message from {}: {}", userId, messageJson);
+
+			// Record inbound WebSocket traffic
+			metricsService.recordNetworkInboundWs(BytesUtils.getBytesLength(messageJson));
 
 			Envelope msg = JsonUtils.readValue(messageJson, new TypeReference<>() {
 			});
@@ -196,15 +200,24 @@ public class WebSocketHandler {
 	private Mono<Void> sendMessage(Envelope envelope) {
 		log.info("Attempting to deliver message from {} to {}", envelope.getFrom(), envelope.getToClientId());
 
+		// Start latency timer
+		long startNanos = System.nanoTime();
+
 		// Try local delivery first
 		return sessionManager.deliverMessage(envelope)
 				.flatMap(delivered -> {
 					if (delivered) {
 						log.info("Message delivered locally from {} to {}", envelope.getFrom(), envelope.getToClientId());
+						// Record latency for local delivery
+						metricsService.recordLatency(startNanos);
 						return Mono.empty();
 					}
 					log.info("Message to {} not delivered locally, resolving target node", envelope.getToClientId());
 					return kafkaService.publishRelay(config.getNodeId(), envelope)
+							.doOnSuccess(v -> {
+								// Record latency for relay delivery (includes Kafka publish time)
+								metricsService.recordLatency(startNanos);
+							})
 							.doOnError(err -> log.error("Failed to relay message from {} to {}", envelope.getFrom(),
 									envelope.getToClientId(), err));
 				})

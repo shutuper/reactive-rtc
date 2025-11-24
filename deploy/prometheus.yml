@@ -33,6 +33,16 @@ scrape_configs:
         target_label: node
         replacement: '$1'
 
+  # Kafka Exporter - Consumer Lag & Topic Metrics
+  - job_name: 'kafka-exporter'
+    metrics_path: '/metrics'
+    scrape_interval: 30s
+    static_configs:
+      - targets: ['kafka-exporter:9308']
+        labels:
+          service: 'kafka'
+          component: 'message-broker'
+
 
 
 

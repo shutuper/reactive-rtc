@@ -2,6 +2,21 @@
 # Usage: docker-compose -f docker-compose.yml -f deploy/docker-compose.prometheus.yml up -d
 
 services:
+  kafka-exporter:
+    image: danielqsj/kafka-exporter:latest
+    container_name: kafka-exporter
+    command:
+      - '--kafka.server=kafka:9092'
+      - '--web.listen-address=:9308'
+      - '--log.level=info'
+      - '--topic.filter=.*'
+      - '--group.filter=.*'
+    ports:
+      - "9308:9308"
+    depends_on:
+      - kafka
+    restart: unless-stopped
+
   prometheus:
     image: prom/prometheus:latest
     container_name: prometheus
@@ -20,6 +35,7 @@ services:
       - load-balancer
       - socket-1
       - socket-2
+      - kafka-exporter
 
   grafana:
     image: grafana/grafana:latest

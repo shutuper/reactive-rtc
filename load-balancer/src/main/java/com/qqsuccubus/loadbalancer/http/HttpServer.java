@@ -8,6 +8,7 @@ import com.qqsuccubus.core.model.NodeDescriptor;
 import com.qqsuccubus.core.model.RingSnapshot;
 import com.qqsuccubus.loadbalancer.config.LBConfig;
 import com.qqsuccubus.loadbalancer.metrics.PrometheusMetricsExporter;
+import com.qqsuccubus.loadbalancer.metrics.PrometheusQueryService;
 import com.qqsuccubus.loadbalancer.ring.IRingManager;
 import com.qqsuccubus.loadbalancer.scale.ScalingEngine;
 import io.micrometer.core.instrument.MeterRegistry;
@@ -33,6 +34,7 @@ public class HttpServer {
     private final IRingManager ringManager;
     private final ScalingEngine scalingEngine;
     private final PrometheusMetricsExporter metricsExporter;
+    private final PrometheusQueryService prometheusQueryService;
 
     public HttpServer(
             LBConfig config,
@@ -44,6 +46,10 @@ public class HttpServer {
         this.ringManager = ringManager;
         this.scalingEngine = scalingEngine;
         this.metricsExporter = new PrometheusMetricsExporter(meterRegistry);
+        this.prometheusQueryService = new PrometheusQueryService(
+                config.getPrometheusHost(),
+                config.getPrometheusPort()
+        );
     }
 
     /**
@@ -155,7 +161,80 @@ public class HttpServer {
                             res.status(HttpResponseStatus.INTERNAL_SERVER_ERROR)
                                     .sendString(Mono.just("{\"error\":\"Serialization failed\"}")).then()
                     ).then(res.send());
-                });
+                })
+                // Prometheus Query: Metrics Summary
+                .get("/api/v1/query/metrics-summary", (req, res) ->
+                        prometheusQueryService.getMetricsSummary()
+                                .flatMap(summary -> Mono.fromCallable(() ->
+                                        MAPPER.writeValueAsString(summary)))
+                                .flatMap(json ->
+                                        res.header("Content-Type", "application/json")
+                                                .sendString(Mono.just(json)).then()
+                                )
+                                .onErrorResume(err -> {
+                                    log.error("Failed to get metrics summary", err);
+                                    return res.status(HttpResponseStatus.INTERNAL_SERVER_ERROR)
+                                            .sendString(Mono.just("{\"error\":\"Failed to query metrics\"}")).then();
+                                })
+                                .then(res.send())
+                )
+                // Prometheus Query: Custom PromQL
+                .get("/api/v1/query/promql", (req, res) -> {
+                    String query = req.param("query");
+                    if (query == null || query.isEmpty()) {
+                        return res.status(HttpResponseStatus.BAD_REQUEST)
+                                .sendString(Mono.just("{\"error\":\"Missing query parameter\"}"));
+                    }
+
+                    return prometheusQueryService.query(query)
+                            .flatMap(result -> Mono.fromCallable(() -> {
+                                Map<String, Object> response = new HashMap<>();
+                                response.put("value", result.getValue().orElse(null));
+                                response.put("resultCount", result.size());
+                                response.put("results", result.getResults());
+                                return MAPPER.writeValueAsString(response);
+                            }))
+                            .flatMap(json ->
+                                    res.header("Content-Type", "application/json")
+                                            .sendString(Mono.just(json)).then()
+                            )
+                            .onErrorResume(err -> {
+                                log.error("Failed to execute Prometheus query", err);
+                                return res.status(HttpResponseStatus.INTERNAL_SERVER_ERROR)
+                                        .sendString(Mono.just("{\"error\":\"Query failed\"}")).then();
+                            })
+                            .then(res.send());
+                })
+                // Prometheus Query: Throughput by Node
+                .get("/api/v1/query/throughput-by-node", (req, res) ->
+                        prometheusQueryService.getMessageThroughputByNode()
+                                .flatMap(throughput -> Mono.fromCallable(() ->
+                                        MAPPER.writeValueAsString(throughput)))
+                                .flatMap(json ->
+                                        res.header("Content-Type", "application/json")
+                                                .sendString(Mono.just(json)).then()
+                                )
+                                .onErrorResume(err ->
+                                        res.status(HttpResponseStatus.INTERNAL_SERVER_ERROR)
+                                                .sendString(Mono.just("{\"error\":\"Query failed\"}")).then()
+                                )
+                                .then(res.send())
+                )
+                // Prometheus Query: Kafka Consumer Lag by Node
+                .get("/api/v1/query/kafka-lag-by-node", (req, res) ->
+                        prometheusQueryService.getKafkaConsumerLagByNode()
+                                .flatMap(lag -> Mono.fromCallable(() ->
+                                        MAPPER.writeValueAsString(lag)))
+                                .flatMap(json ->
+                                        res.header("Content-Type", "application/json")
+                                                .sendString(Mono.just(json)).then()
+                                )
+                                .onErrorResume(err ->
+                                        res.status(HttpResponseStatus.INTERNAL_SERVER_ERROR)
+                                                .sendString(Mono.just("{\"error\":\"Query failed\"}")).then()
+                                )
+                                .then(res.send())
+                );
     }
 
     private Mono<String> processHeartbeat(String body) {

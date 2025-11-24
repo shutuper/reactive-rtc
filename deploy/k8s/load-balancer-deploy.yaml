@@ -95,6 +95,12 @@ spec:
                 configMapKeyRef:
                   name: rtc-config
                   key: MPS_PER_POD
+            - name: PROMETHEUS_HOST
+              value: "prometheus-service"
+              # If Prometheus is in a different namespace:
+              # value: "prometheus-service.monitoring.svc.cluster.local"
+            - name: PROMETHEUS_PORT
+              value: "9090"
           resources:
             requests:
               cpu: 500m

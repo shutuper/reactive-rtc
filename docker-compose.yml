@@ -77,6 +77,8 @@ services:
       L_SLO_MS: 500.0
       CONN_PER_POD: 5000
       MPS_PER_POD: 2500
+      PROMETHEUS_HOST: prometheus
+      PROMETHEUS_PORT: 9090
     ports:
       - "8081:8081"
 

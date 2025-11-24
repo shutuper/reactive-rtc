@@ -1,0 +1,137 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kafka-exporter
+  namespace: reactive-rtc
+  labels:
+    app: kafka-exporter
+    component: monitoring
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: kafka-exporter
+  template:
+    metadata:
+      labels:
+        app: kafka-exporter
+        component: monitoring
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9308"
+        prometheus.io/path: "/metrics"
+    spec:
+      containers:
+      - name: kafka-exporter
+        image: danielqsj/kafka-exporter:v1.9.0
+        imagePullPolicy: IfNotPresent
+        args:
+          # Kafka broker address
+          - --kafka.server=kafka-service:9092
+
+          # Web server settings
+          - --web.listen-address=:9308
+          - --web.telemetry-path=/metrics
+
+          # Logging
+          - --log.level=info
+
+          # Topic filtering (all topics matching delivery_node_*)
+          - --topic.filter=delivery_node_.*|control_ring
+
+          # Consumer group filtering (all socket node consumer groups)
+          - --group.filter=socket-delivery-.*|socket-control-.*
+
+          # Performance tuning
+          - --topic.workers=100
+          - --topic.exclude=^__.*
+
+          # Enable offset lag computation
+          - --offset.show-all=true
+          - --concurrent.enable=true
+
+        ports:
+        - name: metrics
+          containerPort: 9308
+          protocol: TCP
+
+        livenessProbe:
+          httpGet:
+            path: /metrics
+            port: 9308
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+
+        readinessProbe:
+          httpGet:
+            path: /metrics
+            port: 9308
+          initialDelaySeconds: 10
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 3
+
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "100m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+
+        securityContext:
+          runAsNonRoot: true
+          runAsUser: 65534  # nobody user
+          readOnlyRootFilesystem: true
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: kafka-exporter
+  namespace: reactive-rtc
+  labels:
+    app: kafka-exporter
+    component: monitoring
+  annotations:
+    prometheus.io/scrape: "true"
+    prometheus.io/port: "9308"
+    prometheus.io/path: "/metrics"
+spec:
+  type: ClusterIP
+  ports:
+  - port: 9308
+    targetPort: 9308
+    protocol: TCP
+    name: metrics
+  selector:
+    app: kafka-exporter
+
+---
+# ServiceMonitor for Prometheus Operator
+# Optional: Only needed if you're using Prometheus Operator
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: kafka-exporter
+  namespace: reactive-rtc
+  labels:
+    app: kafka-exporter
+    prometheus: kube-prometheus
+spec:
+  selector:
+    matchLabels:
+      app: kafka-exporter
+  endpoints:
+  - port: metrics
+    interval: 30s
+    scrapeTimeout: 10s
+    path: /metrics
+
+

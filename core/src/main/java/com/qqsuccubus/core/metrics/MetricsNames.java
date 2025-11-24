@@ -135,6 +135,54 @@ public final class MetricsNames {
      * </p>
      */
     public static final String LB_SCALING_DECISIONS_TOTAL = "rtc.lb.scaling.decisions.total";
+
+    /**
+     * Counter: Network traffic inbound from WebSocket (bytes).
+     * <p>
+     * Tags: nodeId
+     * </p>
+     */
+    public static final String NETWORK_INBOUND_WS_BYTES = "rtc.socket.network.inbound.ws.bytes";
+
+    /**
+     * Counter: Network traffic inbound from Kafka (bytes).
+     * <p>
+     * Tags: nodeId
+     * </p>
+     */
+    public static final String NETWORK_INBOUND_KAFKA_BYTES = "rtc.socket.network.inbound.kafka.bytes";
+
+    /**
+     * Counter: Network traffic outbound to WebSocket (bytes).
+     * <p>
+     * Tags: nodeId
+     * </p>
+     */
+    public static final String NETWORK_OUTBOUND_WS_BYTES = "rtc.socket.network.outbound.ws.bytes";
+
+    /**
+     * Counter: Network traffic outbound to Kafka (bytes).
+     * <p>
+     * Tags: nodeId
+     * </p>
+     */
+    public static final String NETWORK_OUTBOUND_KAFKA_BYTES = "rtc.socket.network.outbound.kafka.bytes";
+
+    /**
+     * Distribution Summary: Inbound message size distribution (bytes).
+     * <p>
+     * Tags: nodeId, source (ws/kafka)
+     * </p>
+     */
+    public static final String MESSAGE_SIZE_INBOUND = "rtc.socket.message.size.inbound";
+
+    /**
+     * Distribution Summary: Outbound message size distribution (bytes).
+     * <p>
+     * Tags: nodeId, destination (ws/kafka)
+     * </p>
+     */
+    public static final String MESSAGE_SIZE_OUTBOUND = "rtc.socket.message.size.outbound";
 }
 
 

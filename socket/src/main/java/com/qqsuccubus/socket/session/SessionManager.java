@@ -66,7 +66,6 @@ public class SessionManager implements ISessionManager {
 		// Save to Redis
 		return redisService.saveSession(clientId, config.getNodeId(), resumeOffset)
 				.doOnSuccess(v -> {
-					metricsService.incrementActiveConnections();
 					log.info("Session persisted to Redis for user {}, offset={}, nodeId={}",
 							clientId, resumeOffset, config.getNodeId());
 				})
@@ -96,7 +95,6 @@ public class SessionManager implements ISessionManager {
 				.then(Mono.just(session.getSink().tryEmitComplete()))
 				.then()
 				.doOnSuccess(v -> {
-					metricsService.decrementActiveConnections();
 					log.info("Session removed for user {}", clientId);
 				});
 	}

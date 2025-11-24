@@ -1274,13 +1274,9 @@
       },
       "id": 41,
       "options": {
-        "colorMode": "value",
-        "graphMode": "area",
-        "justifyMode": "auto",
         "minVizHeight": 75,
         "minVizWidth": 75,
         "orientation": "auto",
-        "percentChangeColorMode": "standard",
         "reduceOptions": {
           "calcs": [
             "lastNotNull"
@@ -1288,13 +1284,10 @@
           "fields": "",
           "values": false
         },
-        "showPercentChange": false,
         "showThresholdLabels": false,
         "showThresholdMarkers": true,
         "sizing": "auto",
-        "text": {},
-        "textMode": "auto",
-        "wideLayout": true
+        "text": {}
       },
       "pluginVersion": "12.2.1",
       "targets": [
@@ -1347,13 +1340,9 @@
       },
       "id": 42,
       "options": {
-        "colorMode": "value",
-        "graphMode": "area",
-        "justifyMode": "auto",
         "minVizHeight": 75,
         "minVizWidth": 75,
         "orientation": "auto",
-        "percentChangeColorMode": "standard",
         "reduceOptions": {
           "calcs": [
             "lastNotNull"
@@ -1361,13 +1350,10 @@
           "fields": "",
           "values": false
         },
-        "showPercentChange": false,
         "showThresholdLabels": false,
         "showThresholdMarkers": true,
         "sizing": "auto",
-        "text": {},
-        "textMode": "auto",
-        "wideLayout": true
+        "text": {}
       },
       "pluginVersion": "12.2.1",
       "targets": [
@@ -1420,13 +1406,9 @@
       },
       "id": 43,
       "options": {
-        "colorMode": "value",
-        "graphMode": "area",
-        "justifyMode": "auto",
         "minVizHeight": 75,
         "minVizWidth": 75,
         "orientation": "auto",
-        "percentChangeColorMode": "standard",
         "reduceOptions": {
           "calcs": [
             "lastNotNull"
@@ -1434,13 +1416,10 @@
           "fields": "",
           "values": false
         },
-        "showPercentChange": false,
         "showThresholdLabels": false,
         "showThresholdMarkers": true,
         "sizing": "auto",
-        "text": {},
-        "textMode": "auto",
-        "wideLayout": true
+        "text": {}
       },
       "pluginVersion": "12.2.1",
       "targets": [
@@ -1592,13 +1571,13 @@
         },
         "overrides": []
       },
-      "gridPos": {
-        "h": 7,
-        "w": 24,
-        "x": 0,
-        "y": 66
-      },
-      "id": 16,
+        "gridPos": {
+          "h": 7,
+          "w": 24,
+          "x": 0,
+          "y": 66
+        },
+        "id": 16,
       "options": {
         "legend": {
           "calcs": [
@@ -1709,13 +1688,13 @@
         },
         "overrides": []
       },
-      "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 0,
-        "y": 74
-      },
-      "id": 18,
+        "gridPos": {
+          "h": 8,
+          "w": 13,
+          "x": 0,
+          "y": 74
+        },
+        "id": 18,
       "options": {
         "legend": {
           "calcs": [
@@ -1810,13 +1789,13 @@
         },
         "overrides": []
       },
-      "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 12,
-        "y": 74
-      },
-      "id": 19,
+        "gridPos": {
+          "h": 8,
+          "w": 11,
+          "x": 13,
+          "y": 74
+        },
+        "id": 19,
       "options": {
         "legend": {
           "calcs": [
@@ -1966,13 +1945,13 @@
           }
         ]
       },
-      "gridPos": {
-        "h": 8,
-        "w": 8,
-        "x": 0,
-        "y": 83
-      },
-      "id": 20,
+        "gridPos": {
+          "h": 8,
+          "w": 12,
+          "x": 0,
+          "y": 83
+        },
+        "id": 20,
       "options": {
         "legend": {
           "calcs": [
@@ -2090,13 +2069,13 @@
         },
         "overrides": []
       },
-      "gridPos": {
-        "h": 8,
-        "w": 8,
-        "x": 8,
-        "y": 83
-      },
-      "id": 21,
+        "gridPos": {
+          "h": 8,
+          "w": 12,
+          "x": 12,
+          "y": 83
+        },
+        "id": 21,
       "options": {
         "legend": {
           "calcs": [
@@ -2148,75 +2127,6 @@
       "type": "timeseries"
     },
     {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": 0
-              },
-              {
-                "color": "yellow",
-                "value": 200
-              },
-              {
-                "color": "red",
-                "value": 500
-              }
-            ]
-          },
-          "unit": "ms"
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 8,
-        "w": 8,
-        "x": 16,
-        "y": 83
-      },
-      "id": 24,
-      "options": {
-        "minVizHeight": 75,
-        "minVizWidth": 75,
-        "orientation": "auto",
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
-        },
-        "showThresholdLabels": false,
-        "showThresholdMarkers": true,
-        "sizing": "auto"
-      },
-      "pluginVersion": "12.2.1",
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          },
-          "expr": "histogram_quantile(0.95, sum(rate(rtc_socket_latency_seconds_bucket{job=\"socket-nodes\"}[5m])) by (le)) * 1000",
-          "legendFormat": "p95 Latency",
-          "refId": "A"
-        }
-      ],
-      "title": "Current p95 Latency (SLO: 500ms)",
-      "type": "gauge"
-    },
-    {
       "collapsed": false,
       "gridPos": {
         "h": 1,
@@ -2228,6 +2138,198 @@
       "panels": [],
       "title": "Kafka - Consumer Lag & Topics",
       "type": "row"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "Lag",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "barWidthFactor": 0.6,
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "never",
+            "showValues": false,
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": 0
+              }
+            ]
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+        "gridPos": {
+          "h": 8,
+          "w": 12,
+          "x": 12,
+          "y": 92
+        },
+        "id": 26,
+        "options": {
+          "legend": {
+            "calcs": [
+              "last",
+              "max"
+            ],
+            "displayMode": "table",
+            "placement": "bottom",
+            "showLegend": true
+          },
+          "tooltip": {
+            "hideZeros": false,
+            "mode": "multi",
+            "sort": "none"
+          }
+        },
+        "pluginVersion": "12.2.1",
+        "targets": [
+          {
+            "datasource": {
+              "type": "prometheus",
+              "uid": "prometheus"
+            },
+            "expr": "kafka_consumergroup_lag{consumergroup=~\"socket-delivery-.*\",topic=~\"delivery_node_.*\"}",
+            "legendFormat": "{{consumergroup}} - P{{partition}}",
+            "refId": "A"
+          }
+        ],
+        "title": "Kafka Consumer Lag per Partition",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "Offset",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "barWidthFactor": 0.6,
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "never",
+            "showValues": false,
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": 0
+              }
+            ]
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+        "gridPos": {
+          "h": 8,
+          "w": 8,
+          "x": 0,
+          "y": 100
+        },
+        "id": 29,
+      "options": {
+        "legend": {
+          "calcs": [
+            "last",
+            "mean"
+          ],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "hideZeros": false,
+          "mode": "multi",
+          "sort": "none"
+        }
+      },
+      "pluginVersion": "12.2.1",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+            "expr": "sum by (consumergroup) (rate(kafka_consumergroup_current_offset_sum{consumergroup=~\"socket-delivery-.*\",topic=~\"delivery_node_.*\"}[1m]))",
+            "legendFormat": "{{consumergroup}}",
+          "refId": "A"
+        }
+      ],
+      "title": "Kafka Topic Production Rate (messages/sec)",
+      "type": "timeseries"
     },
     {
       "datasource": {
@@ -2295,375 +2397,45 @@
         },
         "overrides": []
       },
-      "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 0,
-        "y": 92
-      },
-      "id": 25,
-      "options": {
-        "legend": {
-          "calcs": [
-            "last",
-            "max",
-            "mean"
-          ],
-          "displayMode": "table",
-          "placement": "bottom",
-          "showLegend": true
+        "gridPos": {
+          "h": 8,
+          "w": 12,
+          "x": 0,
+          "y": 92
         },
-        "tooltip": {
-          "hideZeros": false,
-          "mode": "multi",
-          "sort": "desc"
-        }
-      },
-      "pluginVersion": "12.2.1",
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
+        "id": 25,
+        "options": {
+          "legend": {
+            "calcs": [
+              "last",
+              "max",
+              "mean"
+            ],
+            "displayMode": "table",
+            "placement": "bottom",
+            "showLegend": true
           },
-          "editorMode": "code",
-          "expr": "sum by (consumergroup) (kafka_consumergroup_lag_sum{consumergroup=~\"socket-delivery-.*\"})",
-          "legendFormat": "{{consumergroup}}",
-          "range": true,
-          "refId": "A"
-        }
-      ],
-      "title": "Kafka Consumer Lag (Socket Nodes)",
-      "type": "timeseries"
-    },
-    {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "palette-classic"
-          },
-          "custom": {
-            "axisBorderShow": false,
-            "axisCenteredZero": false,
-            "axisColorMode": "text",
-            "axisLabel": "Lag",
-            "axisPlacement": "auto",
-            "barAlignment": 0,
-            "barWidthFactor": 0.6,
-            "drawStyle": "line",
-            "fillOpacity": 10,
-            "gradientMode": "none",
-            "hideFrom": {
-              "legend": false,
-              "tooltip": false,
-              "viz": false
+          "tooltip": {
+            "hideZeros": false,
+            "mode": "multi",
+            "sort": "desc"
+          }
+        },
+        "pluginVersion": "12.2.1",
+        "targets": [
+          {
+            "datasource": {
+              "type": "prometheus",
+              "uid": "prometheus"
             },
-            "insertNulls": false,
-            "lineInterpolation": "linear",
-            "lineWidth": 1,
-            "pointSize": 5,
-            "scaleDistribution": {
-              "type": "linear"
-            },
-            "showPoints": "never",
-            "showValues": false,
-            "spanNulls": false,
-            "stacking": {
-              "group": "A",
-              "mode": "none"
-            },
-            "thresholdsStyle": {
-              "mode": "off"
-            }
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": 0
-              }
-            ]
-          },
-          "unit": "short"
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 12,
-        "y": 92
-      },
-      "id": 26,
-      "options": {
-        "legend": {
-          "calcs": [
-            "last",
-            "max"
-          ],
-          "displayMode": "table",
-          "placement": "bottom",
-          "showLegend": true
-        },
-        "tooltip": {
-          "hideZeros": false,
-          "mode": "multi",
-          "sort": "none"
-        }
-      },
-      "pluginVersion": "12.2.1",
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          },
-          "expr": "sum by (consumergroup, partition) (kafka_consumergroup_lag{consumergroup=~\"socket-delivery-.*\"})",
-          "legendFormat": "{{consumergroup}} - P{{partition}}",
-          "refId": "A"
-        }
-      ],
-      "title": "Kafka Consumer Lag per Partition",
-      "type": "timeseries"
-    },
-    {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": 0
-              },
-              {
-                "color": "yellow",
-                "value": 500
-              },
-              {
-                "color": "red",
-                "value": 1000
-              }
-            ]
-          },
-          "unit": "short"
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 8,
-        "w": 6,
-        "x": 0,
-        "y": 100
-      },
-      "id": 27,
-      "options": {
-        "minVizHeight": 75,
-        "minVizWidth": 75,
-        "orientation": "auto",
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
-        },
-        "showThresholdLabels": false,
-        "showThresholdMarkers": true,
-        "sizing": "auto"
-      },
-      "pluginVersion": "12.2.1",
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          },
-          "editorMode": "code",
-          "expr": "sum(kafka_consumergroup_lag_sum{consumergroup=~\"socket-delivery-.*\"})",
-          "legendFormat": "Total Lag",
-          "range": true,
-          "refId": "A"
-        }
-      ],
-      "title": "Total Consumer Lag (All Nodes)",
-      "type": "gauge"
-    },
-    {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "red",
-                "value": 0
-              },
-              {
-                "color": "green",
-                "value": 1
-              }
-            ]
-          },
-          "unit": "short"
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 8,
-        "w": 6,
-        "x": 6,
-        "y": 100
-      },
-      "id": 28,
-      "options": {
-        "minVizHeight": 75,
-        "minVizWidth": 75,
-        "orientation": "auto",
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
-        },
-        "showThresholdLabels": false,
-        "showThresholdMarkers": true,
-        "sizing": "auto"
-      },
-      "pluginVersion": "12.2.1",
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          },
-          "expr": "count(kafka_consumergroup_members{consumergroup=~\"socket-delivery-.*\"} > 0)",
-          "legendFormat": "Active Consumers",
-          "refId": "A"
-        }
-      ],
-      "title": "Active Consumer Groups",
-      "type": "gauge"
-    },
-    {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "palette-classic"
-          },
-          "custom": {
-            "axisBorderShow": false,
-            "axisCenteredZero": false,
-            "axisColorMode": "text",
-            "axisLabel": "Offset",
-            "axisPlacement": "auto",
-            "barAlignment": 0,
-            "barWidthFactor": 0.6,
-            "drawStyle": "line",
-            "fillOpacity": 10,
-            "gradientMode": "none",
-            "hideFrom": {
-              "legend": false,
-              "tooltip": false,
-              "viz": false
-            },
-            "insertNulls": false,
-            "lineInterpolation": "linear",
-            "lineWidth": 1,
-            "pointSize": 5,
-            "scaleDistribution": {
-              "type": "linear"
-            },
-            "showPoints": "never",
-            "showValues": false,
-            "spanNulls": false,
-            "stacking": {
-              "group": "A",
-              "mode": "none"
-            },
-            "thresholdsStyle": {
-              "mode": "off"
-            }
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": 0
-              }
-            ]
-          },
-          "unit": "short"
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 12,
-        "y": 100
-      },
-      "id": 29,
-      "options": {
-        "legend": {
-          "calcs": [
-            "last",
-            "mean"
-          ],
-          "displayMode": "table",
-          "placement": "bottom",
-          "showLegend": true
-        },
-        "tooltip": {
-          "hideZeros": false,
-          "mode": "multi",
-          "sort": "none"
-        }
-      },
-      "pluginVersion": "12.2.1",
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          },
-          "editorMode": "code",
-          "expr": "sum by (consumergroup) (rate(kafka_consumergroup_current_offset_sum{consumergroup=~\"socket-delivery-.*\"}[1m]))",
-          "legendFormat": "{{consumergroup}}",
-          "range": true,
-          "refId": "A"
-        }
-      ],
-      "title": "Kafka Topic Production Rate (messages/sec)",
+            "editorMode": "code",
+            "expr": "sum by (consumergroup) (kafka_consumergroup_lag_sum{consumergroup=~\"socket-delivery-.*\",topic=~\"delivery_node_.*\"})",
+            "legendFormat": "{{consumergroup}}",
+            "range": true,
+            "refId": "A"
+          }
+        ],
+        "title": "Kafka Consumer Lag (Socket Nodes)",
       "type": "timeseries"
     },
     {
@@ -2727,10 +2499,311 @@
       "gridPos": {
         "h": 8,
         "w": 12,
-        "x": 0,
-        "y": 108
+        "x": 12,
+        "y": 91
       },
-      "id": 30,
+      "id": 29,
+      "options": {
+        "legend": {
+          "calcs": [
+            "last",
+            "mean"
+          ],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "hideZeros": false,
+          "mode": "multi",
+          "sort": "none"
+        }
+      },
+      "pluginVersion": "12.2.1",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "rate(kafka_consumergroup_current_offset_sum{consumergroup=~\"socket-delivery-.*\"}[1m])",
+          "legendFormat": "{{consumergroup}} - Consumption Rate",
+          "refId": "A"
+        }
+      ],
+      "title": "Consumer Offset Rate (messages/sec)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": 0
+              },
+              {
+                "color": "yellow",
+                "value": 500
+              },
+              {
+                "color": "red",
+                "value": 1000
+              }
+            ]
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+        "gridPos": {
+          "h": 8,
+          "w": 8,
+          "x": 8,
+          "y": 100
+        },
+        "id": 27,
+      "options": {
+        "minVizHeight": 75,
+        "minVizWidth": 75,
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showThresholdLabels": false,
+        "showThresholdMarkers": true,
+        "sizing": "auto"
+      },
+      "pluginVersion": "12.2.1",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+            "editorMode": "code",
+            "expr": "sum(kafka_consumergroup_lag_sum{consumergroup=~\"socket-delivery-.*\",topic=~\"delivery_node_.*\"})",
+            "legendFormat": "Total Lag",
+            "range": true,
+            "refId": "A"
+          }
+        ],
+        "title": "Total Consumer Lag (All Nodes)",
+      "type": "gauge"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": 0
+              },
+              {
+                "color": "green",
+                "value": 1
+              }
+            ]
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+        "gridPos": {
+          "h": 8,
+          "w": 8,
+          "x": 16,
+          "y": 100
+        },
+        "id": 28,
+      "options": {
+        "minVizHeight": 75,
+        "minVizWidth": 75,
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showThresholdLabels": false,
+        "showThresholdMarkers": true,
+        "sizing": "auto"
+      },
+      "pluginVersion": "12.2.1",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+            "expr": "count(kafka_consumergroup_members{consumergroup=~\"socket-delivery-.*\"} > 0)",
+            "legendFormat": "Active Consumers",
+            "refId": "A"
+          }
+        ],
+        "title": "Active Consumer Groups",
+      "type": "gauge"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": 0
+              },
+              {
+                "color": "yellow",
+                "value": 200
+              },
+              {
+                "color": "red",
+                "value": 500
+              }
+            ]
+          },
+          "unit": "ms"
+        },
+        "overrides": []
+      },
+        "gridPos": {
+          "h": 8,
+          "w": 12,
+          "x": 12,
+          "y": 83
+        },
+        "id": 24,
+      "options": {
+        "minVizHeight": 75,
+        "minVizWidth": 75,
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showThresholdLabels": false,
+        "showThresholdMarkers": true,
+        "sizing": "auto"
+      },
+      "pluginVersion": "12.2.1",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "histogram_quantile(0.95, sum(rate(rtc_socket_latency_seconds_bucket{job=\"socket-nodes\"}[5m])) by (le)) * 1000",
+          "legendFormat": "p95 Latency",
+          "refId": "A"
+        }
+      ],
+      "title": "Current p95 Latency (SLO: 500ms)",
+      "type": "gauge"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "barWidthFactor": 0.6,
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "never",
+            "showValues": false,
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": 0
+              }
+            ]
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+        "gridPos": {
+          "h": 8,
+          "w": 12,
+          "x": 0,
+          "y": 108
+        },
+        "id": 30,
       "options": {
         "legend": {
           "calcs": [
@@ -2753,8 +2826,8 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "sum by (topic) (kafka_topic_partitions{topic=~\"delivery_node_.*\"})",
-          "legendFormat": "{{topic}}",
+          "expr": "kafka_topic_partitions{topic=~\"delivery_node_.*\"}",
+          "legendFormat": "{{topic}} - Partitions",
           "refId": "A"
         }
       ],
@@ -2819,13 +2892,13 @@
         },
         "overrides": []
       },
-      "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 12,
-        "y": 108
-      },
-      "id": 33,
+        "gridPos": {
+          "h": 8,
+          "w": 12,
+          "x": 12,
+          "y": 108
+        },
+        "id": 33,
       "options": {
         "legend": {
           "calcs": [
@@ -2857,149 +2930,12 @@
       "type": "timeseries"
     },
     {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "palette-classic"
-          },
-          "custom": {
-            "axisBorderShow": false,
-            "axisCenteredZero": false,
-            "axisColorMode": "text",
-            "axisLabel": "Bytes/sec",
-            "axisPlacement": "auto",
-            "barAlignment": 0,
-            "barWidthFactor": 0.6,
-            "drawStyle": "line",
-            "fillOpacity": 10,
-            "gradientMode": "none",
-            "hideFrom": {
-              "legend": false,
-              "tooltip": false,
-              "viz": false
-            },
-            "insertNulls": false,
-            "lineInterpolation": "linear",
-            "lineWidth": 2,
-            "pointSize": 5,
-            "scaleDistribution": {
-              "type": "linear"
-            },
-            "showPoints": "never",
-            "showValues": false,
-            "spanNulls": false,
-            "stacking": {
-              "group": "A",
-              "mode": "normal"
-            },
-            "thresholdsStyle": {
-              "mode": "off"
-            }
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": 0
-              }
-            ]
-          },
-          "unit": "decbytes"
-        },
-        "overrides": [
-          {
-            "matcher": {
-              "id": "byRegexp",
-              "options": ".*Kafka.*"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "fixedColor": "blue",
-                  "mode": "fixed"
-                }
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byRegexp",
-              "options": ".*WebSocket.*"
-            },
-            "properties": [
-              {
-                "id": "color",
-                "value": {
-                  "fixedColor": "orange",
-                  "mode": "fixed"
-                }
-              }
-            ]
-          }
-        ]
-      },
-      "gridPos": {
-        "h": 8,
-        "w": 24,
-        "x": 0,
-        "y": 116
-      },
-      "id": 35,
-      "options": {
-        "legend": {
-          "calcs": [
-            "mean",
-            "last",
-            "max"
-          ],
-          "displayMode": "table",
-          "placement": "bottom",
-          "showLegend": true
-        },
-        "tooltip": {
-          "hideZeros": false,
-          "mode": "multi",
-          "sort": "desc"
-        }
-      },
-      "pluginVersion": "12.2.1",
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          },
-          "expr": "rate(rtc_socket_network_outbound_ws_bytes_total{job=\"socket-nodes\"}[1m])",
-          "legendFormat": "{{node_id}} - WebSocket Out",
-          "refId": "A"
-        },
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          },
-          "expr": "rate(rtc_socket_network_outbound_kafka_bytes_total{job=\"socket-nodes\"}[1m])",
-          "legendFormat": "{{node_id}} - Kafka Out",
-          "refId": "B"
-        }
-      ],
-      "title": "Outbound Network Traffic (bytes/sec)",
-      "type": "timeseries"
-    },
-    {
       "collapsed": false,
       "gridPos": {
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 124
+        "y": 116
       },
       "id": 110,
       "panels": [],
@@ -3095,13 +3031,13 @@
           }
         ]
       },
-      "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 0,
-        "y": 125
-      },
-      "id": 34,
+        "gridPos": {
+          "h": 8,
+          "w": 12,
+          "x": 0,
+          "y": 117
+        },
+        "id": 34,
       "options": {
         "legend": {
           "calcs": [
@@ -3157,12 +3093,12 @@
             "axisBorderShow": false,
             "axisCenteredZero": false,
             "axisColorMode": "text",
-            "axisLabel": "Bytes",
+            "axisLabel": "Bytes/sec",
             "axisPlacement": "auto",
             "barAlignment": 0,
             "barWidthFactor": 0.6,
             "drawStyle": "line",
-            "fillOpacity": 0,
+            "fillOpacity": 10,
             "gradientMode": "none",
             "hideFrom": {
               "legend": false,
@@ -3171,7 +3107,7 @@
             },
             "insertNulls": false,
             "lineInterpolation": "linear",
-            "lineWidth": 1,
+            "lineWidth": 2,
             "pointSize": 5,
             "scaleDistribution": {
               "type": "linear"
@@ -3181,7 +3117,7 @@
             "spanNulls": false,
             "stacking": {
               "group": "A",
-              "mode": "none"
+              "mode": "normal"
             },
             "thresholdsStyle": {
               "mode": "off"
@@ -3197,17 +3133,48 @@
               }
             ]
           },
-          "unit": "bytes"
+          "unit": "decbytes"
         },
-        "overrides": []
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*Kafka.*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "blue",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byRegexp",
+              "options": ".*WebSocket.*"
+            },
+            "properties": [
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "orange",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          }
+        ]
       },
-      "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 12,
-        "y": 125
-      },
-      "id": 38,
+        "gridPos": {
+          "h": 8,
+          "w": 12,
+          "x": 12,
+          "y": 117
+        },
+        "id": 35,
       "options": {
         "legend": {
           "calcs": [
@@ -3222,7 +3189,7 @@
         "tooltip": {
           "hideZeros": false,
           "mode": "multi",
-          "sort": "none"
+          "sort": "desc"
         }
       },
       "pluginVersion": "12.2.1",
@@ -3232,10 +3199,8 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "editorMode": "code",
-          "expr": "rate(rtc_socket_message_size_inbound_bytes_sum{job=\"socket-nodes\"}[1m]) / rate(rtc_socket_message_size_inbound_bytes_count{job=\"socket-nodes\"}[1m])",
-          "legendFormat": "{{node_id}} - Average",
-          "range": true,
+          "expr": "rate(rtc_socket_network_outbound_ws_bytes_total{job=\"socket-nodes\"}[1m])",
+          "legendFormat": "{{node_id}} - WebSocket Out",
           "refId": "A"
         },
         {
@@ -3243,14 +3208,12 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "editorMode": "code",
-          "expr": "rtc_socket_message_size_inbound_bytes_max{job=\"socket-nodes\"}",
-          "legendFormat": "{{node_id}} - Max",
-          "range": true,
+          "expr": "rate(rtc_socket_network_outbound_kafka_bytes_total{job=\"socket-nodes\"}[1m])",
+          "legendFormat": "{{node_id}} - Kafka Out",
           "refId": "B"
         }
       ],
-      "title": "Inbound Message Size (Average & Max)",
+      "title": "Outbound Network Traffic (bytes/sec)",
       "type": "timeseries"
     },
     {
@@ -3285,13 +3248,13 @@
         },
         "overrides": []
       },
-      "gridPos": {
-        "h": 8,
-        "w": 6,
-        "x": 0,
-        "y": 133
-      },
-      "id": 36,
+        "gridPos": {
+          "h": 8,
+          "w": 6,
+          "x": 0,
+          "y": 125
+        },
+        "id": 36,
       "options": {
         "minVizHeight": 75,
         "minVizWidth": 75,
@@ -3354,13 +3317,13 @@
         },
         "overrides": []
       },
-      "gridPos": {
-        "h": 8,
-        "w": 6,
-        "x": 6,
-        "y": 133
-      },
-      "id": 37,
+        "gridPos": {
+          "h": 8,
+          "w": 6,
+          "x": 6,
+          "y": 125
+        },
+        "id": 37,
       "options": {
         "minVizHeight": 75,
         "minVizWidth": 75,
@@ -3405,12 +3368,12 @@
             "axisBorderShow": false,
             "axisCenteredZero": false,
             "axisColorMode": "text",
-            "axisLabel": "MB/sec",
+            "axisLabel": "Bytes",
             "axisPlacement": "auto",
             "barAlignment": 0,
             "barWidthFactor": 0.6,
             "drawStyle": "line",
-            "fillOpacity": 10,
+            "fillOpacity": 0,
             "gradientMode": "none",
             "hideFrom": {
               "legend": false,
@@ -3445,22 +3408,23 @@
               }
             ]
           },
-          "unit": "decmbytes"
+          "unit": "bytes"
         },
         "overrides": []
       },
-      "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 12,
-        "y": 133
-      },
-      "id": 40,
+        "gridPos": {
+          "h": 8,
+          "w": 12,
+          "x": 12,
+          "y": 125
+        },
+        "id": 38,
       "options": {
         "legend": {
           "calcs": [
             "mean",
-            "last"
+            "last",
+            "max"
           ],
           "displayMode": "table",
           "placement": "bottom",
@@ -3479,8 +3443,10 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "sum by (node_id) (rate(rtc_socket_network_inbound_ws_bytes_total{job=\"socket-nodes\"}[1m]) + rate(rtc_socket_network_inbound_kafka_bytes_total{job=\"socket-nodes\"}[1m])) / 1024 / 1024",
-          "legendFormat": "{{node_id}} - Inbound",
+          "editorMode": "code",
+          "expr": "rate(rtc_socket_message_size_inbound_bytes_sum{job=\"socket-nodes\"}[1m]) / rate(rtc_socket_message_size_inbound_bytes_count{job=\"socket-nodes\"}[1m])",
+          "legendFormat": "{{node_id}} - Average",
+          "range": true,
           "refId": "A"
         },
         {
@@ -3488,12 +3454,14 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "sum by (node_id) (rate(rtc_socket_network_outbound_ws_bytes_total{job=\"socket-nodes\"}[1m]) + rate(rtc_socket_network_outbound_kafka_bytes_total{job=\"socket-nodes\"}[1m])) / 1024 / 1024",
-          "legendFormat": "{{node_id}} - Outbound",
+          "editorMode": "code",
+          "expr": "rtc_socket_message_size_inbound_bytes_max{job=\"socket-nodes\"}",
+          "legendFormat": "{{node_id}} - Max",
+          "range": true,
           "refId": "B"
         }
       ],
-      "title": "Total Network Bandwidth per Node (MB/sec)",
+      "title": "Inbound Message Size (Average & Max)",
       "type": "timeseries"
     },
     {
@@ -3554,13 +3522,13 @@
         },
         "overrides": []
       },
-      "gridPos": {
-        "h": 7,
-        "w": 24,
-        "x": 0,
-        "y": 141
-      },
-      "id": 39,
+        "gridPos": {
+          "h": 8,
+          "w": 12,
+          "x": 0,
+          "y": 133
+        },
+        "id": 39,
       "options": {
         "legend": {
           "calcs": [
@@ -3605,6 +3573,111 @@
       ],
       "title": "Outbound Message Size (Average & Max)",
       "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "MB/sec",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "barWidthFactor": 0.6,
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "never",
+            "showValues": false,
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": 0
+              }
+            ]
+          },
+          "unit": "decmbytes"
+        },
+        "overrides": []
+      },
+        "gridPos": {
+          "h": 8,
+          "w": 12,
+          "x": 12,
+          "y": 133
+        },
+        "id": 40,
+      "options": {
+        "legend": {
+          "calcs": [
+            "mean",
+            "last"
+          ],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "hideZeros": false,
+          "mode": "multi",
+          "sort": "none"
+        }
+      },
+      "pluginVersion": "12.2.1",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum by (node_id) (rate(rtc_socket_network_inbound_ws_bytes_total{job=\"socket-nodes\"}[1m]) + rate(rtc_socket_network_inbound_kafka_bytes_total{job=\"socket-nodes\"}[1m])) / 1024 / 1024",
+          "legendFormat": "{{node_id}} - Inbound",
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum by (node_id) (rate(rtc_socket_network_outbound_ws_bytes_total{job=\"socket-nodes\"}[1m]) + rate(rtc_socket_network_outbound_kafka_bytes_total{job=\"socket-nodes\"}[1m])) / 1024 / 1024",
+          "legendFormat": "{{node_id}} - Outbound",
+          "refId": "B"
+        }
+      ],
+      "title": "Total Network Bandwidth per Node (MB/sec)",
+      "type": "timeseries"
     }
   ],
   "preload": false,
@@ -3619,12 +3692,12 @@
     "list": []
   },
   "time": {
-    "from": "now-5m",
+    "from": "now-30m",
     "to": "now"
   },
   "timepicker": {},
   "timezone": "",
   "title": "Reactive RTC - Complete Monitoring Dashboard",
   "uid": "reactive-rtc-complete",
-  "version": 17
+  "version": 11
 }

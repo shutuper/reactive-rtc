@@ -3,6 +3,7 @@ package com.qqsuccubus.socket.kafka;
 import com.qqsuccubus.core.msg.ControlMessages;
 import com.qqsuccubus.core.msg.Envelope;
 import com.qqsuccubus.core.msg.Topics;
+import com.qqsuccubus.core.util.BytesUtils;
 import com.qqsuccubus.core.util.JsonUtils;
 import com.qqsuccubus.socket.config.SocketConfig;
 import com.qqsuccubus.socket.metrics.MetricsService;
@@ -58,7 +59,7 @@ public class KafkaService implements IKafkaService {
 
     // Topic configuration for per-node delivery topics
     private static final String DELIVERY_TOPIC_PREFIX = "delivery_node_";  // Topic naming: delivery_node_{nodeId}
-    private static final int DEFAULT_PARTITIONS = 3;      // Partitions per node topic
+    private static final int DEFAULT_PARTITIONS = 1;      // Partitions per node topic
     private static final short REPLICATION_FACTOR = 1;    // Replication factor (1 for dev, 3+ for prod)
 
     public KafkaService(SocketConfig config, ISessionManager sessionManager,
@@ -132,8 +133,7 @@ public class KafkaService implements IKafkaService {
                 deliveryConsumerProps.put(ConsumerConfig.GROUP_ID_CONFIG, "socket-delivery-" + currentNodeId);
                 deliveryConsumerProps.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class);
                 deliveryConsumerProps.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class);
-                deliveryConsumerProps.put(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "latest");
-                deliveryConsumerProps.put(ConsumerConfig.MAX_POLL_RECORDS_CONFIG, "100");
+                deliveryConsumerProps.put(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest");
                 deliveryConsumerProps.put(ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG, "false");
 
                 ReceiverOptions<String, String> deliveryReceiverOptions = ReceiverOptions.<String, String>create(
@@ -147,7 +147,6 @@ public class KafkaService implements IKafkaService {
                 // Consumer for CONTROL_RING
                 Map<String, Object> controlConsumerProps = new HashMap<>();
                 controlConsumerProps.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, config.getKafkaBootstrap());
-                controlConsumerProps.put(ConsumerConfig.GROUP_ID_CONFIG, "socket-control-" + currentNodeId);
                 controlConsumerProps.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class);
                 controlConsumerProps.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class);
                 controlConsumerProps.put(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "latest");
@@ -187,12 +186,19 @@ public class KafkaService implements IKafkaService {
         return deliveryReceiver.receive()
             .flatMap(record -> {
                 try {
-                    Envelope envelope = JsonUtils.readValue(record.value(), Envelope.class);
+                    // Record inbound Kafka traffic
+                    String messageValue = record.value();
+                    metricsService.recordNetworkInboundKafka(BytesUtils.getBytesLength(messageValue));
+
+                    Envelope envelope = JsonUtils.readValue(messageValue, Envelope.class);
                     log.info(
                         "Kafka message received for node {}: from={}, to={}, msgId={}, envelope.nodeId={}",
-                        currentNodeId, envelope.getFrom(), envelope.getToClientId(), 
+                        currentNodeId, envelope.getFrom(), envelope.getToClientId(),
                         envelope.getMsgId(), envelope.getNodeId()
                     );
+
+                    // Start latency timer for relay delivery
+                    long relayStartNanos = System.nanoTime();
 
                     // Try to deliver the message to the connected client
                     return sessionManager.deliverMessage(envelope)
@@ -201,6 +207,9 @@ public class KafkaService implements IKafkaService {
                                 // Successfully delivered to connected client
                                 log.info("Message delivered to connected client: {}", envelope.getToClientId());
                                 metricsService.recordDeliverRelay();
+                                // Record relay delivery latency (Kafka consumer -> client delivery)
+                                metricsService.recordLatency(relayStartNanos);
+
                                 record.receiverOffset().acknowledge();
 
                                 return Mono.empty();
@@ -278,10 +287,16 @@ public class KafkaService implements IKafkaService {
 
                 String json = JsonUtils.writeValueAsString(envelope);
 
+                // Record outbound Kafka traffic
+                metricsService.recordNetworkOutboundKafka(BytesUtils.getBytesLength(json));
+
                 // Get target node's dedicated topic
                 String targetTopic = getDeliveryTopicForNode(resolvedNodeId);
 
                 log.info("Sending message to node {} on topic {}", resolvedNodeId, targetTopic);
+
+                // Start Kafka publish latency timer
+                long kafkaStartNanos = System.nanoTime();
 
                 // Create record for target node's topic
                 ProducerRecord<String, String> record = new ProducerRecord<>(
@@ -292,9 +307,13 @@ public class KafkaService implements IKafkaService {
 
                 return sender.send(Mono.just(SenderRecord.create(record, null)))
                     .retry(3)
-                    .doOnNext(result -> log.info("Relayed message to node {} (topic {}): msgId={}",
-                        resolvedNodeId, targetTopic, envelope.getMsgId()
-                    ))
+                    .doOnNext(result -> {
+                        // Record Kafka publish latency
+                        metricsService.recordKafkaPublishLatency(kafkaStartNanos);
+                        log.info("Relayed message to node {} (topic {}): msgId={}",
+                            resolvedNodeId, targetTopic, envelope.getMsgId()
+                        );
+                    })
                     .flatMap(message -> Mono.empty())
                     .onErrorResume(err -> {
                         log.warn(

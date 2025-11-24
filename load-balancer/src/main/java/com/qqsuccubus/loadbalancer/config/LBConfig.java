@@ -31,6 +31,10 @@ public class LBConfig {
     // Heartbeat grace window
     Duration heartbeatGrace;
 
+    // Prometheus configuration
+    String prometheusHost;
+    int prometheusPort;
+
     public static LBConfig fromEnv() {
         return LBConfig.builder()
                 .httpPort(Integer.parseInt(getEnv("HTTP_PORT", "8081")))
@@ -48,6 +52,8 @@ public class LBConfig {
                 .scalingInterval(Duration.ofSeconds(Integer.parseInt(getEnv("SCALING_INTERVAL_SEC", "60"))))
                 .maxScaleStep(Integer.parseInt(getEnv("MAX_SCALE_STEP", "3")))
                 .heartbeatGrace(Duration.ofSeconds(Integer.parseInt(getEnv("HEARTBEAT_GRACE_SEC", "90"))))
+                .prometheusHost(getEnv("PROMETHEUS_HOST", "prometheus"))
+                .prometheusPort(Integer.parseInt(getEnv("PROMETHEUS_PORT", "9090")))
                 .build();
     }
 

@@ -44,6 +44,16 @@ public final class MetricsTags {
      * Tag key for scaling action.
      */
     public static final String ACTION = "action";
+
+    /**
+     * Tag key for network traffic source (ws/kafka).
+     */
+    public static final String SOURCE = "source";
+
+    /**
+     * Tag key for network traffic destination (ws/kafka).
+     */
+    public static final String DESTINATION = "destination";
 }
 
 
