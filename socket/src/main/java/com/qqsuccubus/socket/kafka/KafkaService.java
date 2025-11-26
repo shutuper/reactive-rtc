@@ -186,21 +186,20 @@ public class KafkaService implements IKafkaService {
         return deliveryReceiver.receive()
             .flatMap(record -> {
                 try {
+                    // Start latency timer for relay delivery
+                    long relayStartNanos = System.nanoTime();
                     // Record inbound Kafka traffic
                     String messageValue = record.value();
 
                     metricsService.recordNetworkInboundKafka(BytesUtils.getBytesLength(messageValue));
 
                     Envelope envelope = JsonUtils.readValue(messageValue, Envelope.class);
-
+                    metricsService.recordKafkaDeliveryTopicLatency(envelope.getTs());
                     log.info(
                         "Kafka message received for node {}: from={}, to={}, msgId={}, envelope.nodeId={}",
                         currentNodeId, envelope.getFrom(), envelope.getToClientId(),
                         envelope.getMsgId(), envelope.getNodeId()
                     );
-
-                    // Start latency timer for relay delivery
-                    long relayStartNanos = System.nanoTime();
 
                     // Try to deliver the message to the connected client
                     return sessionManager.deliverMessage(envelope)

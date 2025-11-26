@@ -102,6 +102,7 @@ public class SessionManager implements ISessionManager {
 	@Override
 	public Mono<Boolean> deliverMessage(Envelope envelope) {
 		return Mono.defer(() -> {
+            metricsService.recordDeliverLocal();
 			String clientId = envelope.getToClientId();
 
 			log.debug("Checking activeSessions map: total size={}, contains key '{}'={}",
@@ -133,7 +134,6 @@ public class SessionManager implements ISessionManager {
 			}
 
 			log.info("Successfully emitted message to clientId='{}', msgId={}", clientId, envelope.getMsgId());
-			metricsService.recordDeliverLocal();
 			return Mono.just(true);
 		});
 	}

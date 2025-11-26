@@ -16,22 +16,6 @@ public final class MetricsNames {
     }
 
     /**
-     * Gauge: Current number of active WebSocket connections.
-     * <p>
-     * Tags: nodeId
-     * </p>
-     */
-    public static final String ACTIVE_CONNECTIONS = "rtc.socket.active_connections";
-
-    /**
-     * Counter: Total WebSocket handshakes (successful + failed).
-     * <p>
-     * Tags: nodeId, status (success/failure)
-     * </p>
-     */
-    public static final String HANDSHAKES_TOTAL = "rtc.socket.handshakes.total";
-
-    /**
      * Counter: Messages delivered per second.
      * <p>
      * Tags: nodeId, type (local/relay)
@@ -48,44 +32,12 @@ public final class MetricsNames {
     public static final String LATENCY = "rtc.socket.latency";
 
     /**
-     * Gauge: Current outbound queue depth (buffered messages).
-     * <p>
-     * Tags: nodeId
-     * </p>
-     */
-    public static final String QUEUE_DEPTH = "rtc.socket.queue_depth";
-
-    /**
-     * Counter: Total reconnect attempts.
-     * <p>
-     * Tags: nodeId
-     * </p>
-     */
-    public static final String RECONNECTS_TOTAL = "rtc.socket.reconnects.total";
-
-    /**
      * Counter: Successful resume operations.
      * <p>
      * Tags: nodeId
      * </p>
      */
     public static final String RESUME_SUCCESS_TOTAL = "rtc.socket.resume.success.total";
-
-    /**
-     * Counter: Failed resume operations (expired token, invalid signature, etc.).
-     * <p>
-     * Tags: nodeId, reason
-     * </p>
-     */
-    public static final String RESUME_FAILURE_TOTAL = "rtc.socket.resume.failure.total";
-
-    /**
-     * Counter: Ring updates received.
-     * <p>
-     * Tags: nodeId
-     * </p>
-     */
-    public static final String RING_UPDATES_TOTAL = "rtc.socket.ring_updates.total";
 
     /**
      * Counter: Messages dropped due to backpressure.
@@ -96,29 +48,15 @@ public final class MetricsNames {
     public static final String DROPS_TOTAL = "rtc.socket.drops.total";
 
     /**
-     * Gauge: Current ring version on this node.
-     * <p>
-     * Tags: nodeId
-     * </p>
-     */
-    public static final String RING_VERSION = "rtc.socket.ring_version";
-
-    /**
      * Timer: Kafka message publish latency.
      * <p>
      * Tags: topic
      * </p>
      */
     public static final String KAFKA_PUBLISH_LATENCY = "rtc.kafka.publish.latency";
+
     public static final String KAFKA_DELIVERY_TOPIC_LAG_LATENCY = "rtc.kafka.delivery.topic.lag.latency";
 
-    /**
-     * Timer: Redis operation latency.
-     * <p>
-     * Tags: operation (hset/hget/xadd/xread)
-     * </p>
-     */
-    public static final String REDIS_LATENCY = "rtc.redis.latency";
 
     /**
      * Gauge: Number of physical nodes in the ring.

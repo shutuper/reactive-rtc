@@ -12,7 +12,6 @@ import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 import java.time.Duration;
-import java.time.Instant;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -61,7 +60,7 @@ public class RedisService implements IRedisService {
         Map<String, String> sessionData = new HashMap<>();
         sessionData.put("nodeId", nodeId);
         sessionData.put("lastOffset", String.valueOf(lastOffset));
-        sessionData.put("lastSeen", String.valueOf(Instant.now().toEpochMilli()));
+        sessionData.put("lastSeen", String.valueOf(System.currentTimeMillis()));
 
         return commands.hmset(key, sessionData)
             .then(commands.expire(key, config.getResumeTtlSec()))

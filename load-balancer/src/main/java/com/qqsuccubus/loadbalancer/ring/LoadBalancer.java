@@ -15,6 +15,7 @@ import io.micrometer.core.instrument.MeterRegistry;
 import io.netty.util.internal.PlatformDependent;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 import java.time.Instant;
@@ -22,13 +23,6 @@ import java.util.*;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.Collectors;
 
-/**
- * Manages the consistent hash ring and node registry.
- * <p>
- * Tracks node heartbeats, computes ring topology, and publishes updates.
- * Implements IRingManager for dependency inversion.
- * </p>
- */
 public class LoadBalancer implements ILoadBalancer {
     private static final Logger log = LoggerFactory.getLogger(LoadBalancer.class);
 
@@ -59,15 +53,12 @@ public class LoadBalancer implements ILoadBalancer {
         // Metrics
         Gauge.builder(MetricsNames.LB_RING_NODES, this, r -> r.nodeRegistry.size())
             .register(meterRegistry);
-
-        // Start periodic stale node cleanup
-        startPeriodicCleanup();
     }
 
 
-    public void processHeartbeat(List<String> activeNodes) {
+    public Flux<Void> processHeartbeat(List<String> activeNodes) {
         if (activeNodes == null || activeNodes.isEmpty()) {
-            return;
+            return Flux.empty();
         }
 
         long timestampMs = System.currentTimeMillis();
@@ -83,7 +74,7 @@ public class LoadBalancer implements ILoadBalancer {
 
         boolean noTopolyUpdates = removedNodes.isEmpty() && newNodes.isEmpty();
 
-        nodeMetricsService.getAllNodeMetrics().map(
+        return nodeMetricsService.getAllNodeMetrics().map(
                 nodesWithMetrics -> activeNodes.stream().map(nodeId -> {
                     NodeMetrics nodeMetrics = nodesWithMetrics.getOrDefault(
                         nodeId, NodeMetrics.builder().nodeId(nodeId).build()
@@ -107,6 +98,7 @@ public class LoadBalancer implements ILoadBalancer {
 //            .doOnNext(newNodeEntries -> removedNodes.forEach(nodeRegistry::remove))
             .doOnNext(newNodeEntries -> {
                 int numbOfNodes = newNodeEntries.size();
+                //todo finish it
                 if (noTopolyUpdates) {
                     double cpu = newNodeEntries.stream().mapToDouble(node -> node.lastHeartbeat.getCpu()).sum();
                     double mem = newNodeEntries.stream().mapToDouble(node -> node.lastHeartbeat.getMem()).sum();
@@ -129,29 +121,7 @@ public class LoadBalancer implements ILoadBalancer {
                 } else {
 
                 }
-            }).subscribe();
-
-//        String nodeId = heartbeat.getNodeId();
-//
-//        NodeEntry existing = nodeRegistry.get(nodeId);
-//        boolean isNew = (existing == null);
-//
-//        // Update registry
-//        nodeRegistry.put(nodeId, new NodeEntry(descriptor, Instant.now(), heartbeat));
-//
-//        if (isNew) {
-//            log.info("New node joined: {}", nodeId);
-//            recomputeRing("node-joined: " + nodeId);
-//            return;
-//        }
-//
-//        // Check if weight changed (significant)
-//        if (existing != null && existing.descriptor.getWeight() != descriptor.getWeight()) {
-//            log.info("Node weight changed: {} ({} -> {})",
-//                nodeId, existing.descriptor.getWeight(), descriptor.getWeight());
-//            recomputeRing("weight-changed: " + nodeId);
-//        }
-
+            }).thenMany(Flux.empty());
     }
 
     /**
@@ -183,13 +153,7 @@ public class LoadBalancer implements ILoadBalancer {
         return Collections.unmodifiableMap(nodeRegistry);
     }
 
-    /**
-     * Recomputes the ring topology and publishes update.
-     *
-     * @param reason Human-readable reason for recompute
-     * @return Mono completing when published
-     */
-    private Mono<Void> recomputeRing(String reason) {
+    private Mono<Void> recomputeHashBalancer(String reason) {
         // Build node weights map for SkeletonWeightedRendezvousHash
         Map<String, Integer> nodeWeights = nodeRegistry.entrySet().stream()
             .collect(Collectors.toMap(
@@ -220,32 +184,6 @@ public class LoadBalancer implements ILoadBalancer {
             .build();
 
         return kafkaPublisher.publishRingUpdate(ringUpdate);
-    }
-
-    /**
-     * Starts periodic cleanup of stale nodes (nodes that haven't sent heartbeats).
-     */
-    private void startPeriodicCleanup() {
-        new Timer().schedule(new TimerTask() {
-            @Override
-            public void run() {
-                cleanupStaleNodes();
-            }
-        }, 30_000, 30_000); // every 30 seconds
-    }
-
-    private void cleanupStaleNodes() {
-        Instant now = Instant.now();
-        List<String> staleNodes = nodeRegistry.entrySet().stream()
-            .filter(e -> Instant.ofEpochMilli(e.getValue().lastHeartbeat.getTimestampMs()).plus(config.getHeartbeatGrace()).isBefore(now))
-            .map(Map.Entry::getKey)
-            .collect(Collectors.toList());
-
-        if (!staleNodes.isEmpty()) {
-            log.warn("Removing {} stale nodes: {}", staleNodes.size(), staleNodes);
-            staleNodes.forEach(nodeRegistry::remove);
-            recomputeRing("stale-nodes-removed").subscribe();
-        }
     }
 
     private DistributionVersion createVersion() {

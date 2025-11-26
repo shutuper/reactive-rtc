@@ -1,7 +1,6 @@
 package com.qqsuccubus.loadbalancer.http;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
+import com.qqsuccubus.core.util.JsonUtils;
 import com.qqsuccubus.loadbalancer.config.LBConfig;
 import com.qqsuccubus.loadbalancer.metrics.NodeMetricsService;
 import com.qqsuccubus.loadbalancer.metrics.PrometheusMetricsExporter;
@@ -25,7 +24,6 @@ import java.util.Map;
  */
 public class HttpServer {
     private static final Logger log = LoggerFactory.getLogger(HttpServer.class);
-    private static final ObjectMapper MAPPER = new ObjectMapper().registerModule(new JavaTimeModule());
 
     private final LBConfig config;
     private final ILoadBalancer ringManager;
@@ -97,7 +95,7 @@ public class HttpServer {
                 return Mono.fromCallable(() -> {
                     Map<String, Object> response = new HashMap<>();
                     response.put("nodeId", node.nodeId());
-                    return MAPPER.writeValueAsString(response);
+                    return JsonUtils.writeValueAsString(response);
                 }).flatMap(json ->
                     res.header("Content-Type", "application/json")
                         .sendString(Mono.just(json)).then()
@@ -122,7 +120,7 @@ public class HttpServer {
 
                 return Mono.fromCallable(() -> {
                     Map<String, Object> response = new HashMap<>();
-                    return MAPPER.writeValueAsString(response);
+                    return JsonUtils.writeValueAsString(response);
                 }).flatMap(json ->
                     res.header("Content-Type", "application/json")
                         .sendString(Mono.just(json)).then()
@@ -135,7 +133,7 @@ public class HttpServer {
             .get("/api/v1/query/metrics-summary", (req, res) ->
                 prometheusQueryService.getMetricsSummary()
                     .flatMap(summary -> Mono.fromCallable(() ->
-                        MAPPER.writeValueAsString(summary)))
+                        JsonUtils.writeValueAsString(summary)))
                     .flatMap(json ->
                         res.header("Content-Type", "application/json")
                             .sendString(Mono.just(json)).then()
@@ -161,7 +159,7 @@ public class HttpServer {
                         response.put("value", result.getValue().orElse(null));
                         response.put("resultCount", result.size());
                         response.put("results", result.getResults());
-                        return MAPPER.writeValueAsString(response);
+                        return JsonUtils.writeValueAsString(response);
                     }))
                     .flatMap(json ->
                         res.header("Content-Type", "application/json")
@@ -178,7 +176,7 @@ public class HttpServer {
             .get("/api/v1/query/throughput-by-node", (req, res) ->
                 prometheusQueryService.getMessageThroughputByNode()
                     .flatMap(throughput -> Mono.fromCallable(() ->
-                        MAPPER.writeValueAsString(throughput)))
+                        JsonUtils.writeValueAsString(throughput)))
                     .flatMap(json ->
                         res.header("Content-Type", "application/json")
                             .sendString(Mono.just(json)).then()
@@ -193,7 +191,7 @@ public class HttpServer {
             .get("/api/v1/query/kafka-lag-by-node", (req, res) ->
                 prometheusQueryService.getKafkaConsumerLagByNode()
                     .flatMap(lag -> Mono.fromCallable(() ->
-                        MAPPER.writeValueAsString(lag)))
+                        JsonUtils.writeValueAsString(lag)))
                     .flatMap(json ->
                         res.header("Content-Type", "application/json")
                             .sendString(Mono.just(json)).then()
@@ -207,7 +205,7 @@ public class HttpServer {
             .get("/api/v1/query/node-metrics", (req, res) ->
                 nodeMetricsService.getAllNodeMetrics()
                     .flatMap(nodeMetrics -> Mono.fromCallable(() ->
-                        MAPPER.writeValueAsString(nodeMetrics)))
+                        JsonUtils.writeValueAsString(nodeMetrics)))
                     .flatMap(json ->
                         res.header("Content-Type", "application/json")
                             .sendString(Mono.just(json)).then()

@@ -174,6 +174,10 @@ public class MetricsService {
         latency.record(Duration.ofNanos(System.nanoTime() - startNanos));
     }
 
+    public void recordLatencyMs(long startMillis) {
+        kafkaDeliryTopicLatency.record(System.currentTimeMillis() - startMillis, TimeUnit.MILLISECONDS);
+    }
+
     /**
      * Records Kafka publish latency.
      * Useful for diagnosing broker-related delays.

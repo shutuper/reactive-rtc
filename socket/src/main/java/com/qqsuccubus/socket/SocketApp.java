@@ -14,20 +14,6 @@ import reactor.core.Disposable;
 
 import java.time.Duration;
 
-/**
- * Main entry point for the Socket node.
- * <p>
- * Responsibilities:
- * <ul>
- *   <li>Serve WebSockets at /ws (query: userId, optional resumeToken)</li>
- *   <li>Maintain session map in Redis</li>
- *   <li>Subscribe to Kafka control topics (ring updates, drain signals)</li>
- *   <li>Two-hop relay for remote users</li>
- *   <li>Graceful reconnect with jitter</li>
- *   <li>Expose /healthz and /metrics endpoints</li>
- * </ul>
- * </p>
- */
 public class SocketApp {
     private static final Logger log = LoggerFactory.getLogger(SocketApp.class);
 

@@ -12,19 +12,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.Disposable;
 
-/**
- * Main entry point for the Load-Balancer control plane.
- * <p>
- * Responsibilities:
- * <ul>
- *   <li>Track node heartbeats and compute weighted consistent hash ring</li>
- *   <li>Publish ring updates to Kafka</li>
- *   <li>Provide resolution endpoints for frontends</li>
- *   <li>Compute scaling directives based on domain metrics</li>
- *   <li>Expose /metrics endpoint for Prometheus</li>
- * </ul>
- * </p>
- */
 public class LoadBalancerApp {
     private static final Logger log = LoggerFactory.getLogger(LoadBalancerApp.class);
 
@@ -33,8 +20,6 @@ public class LoadBalancerApp {
 
         log.info("Starting Load-Balancer");
         log.info("  Kafka: {}", config.getKafkaBootstrap());
-        log.info("  Ring vnodes per weight: {}", config.getRingVnodesPerWeight());
-        log.info("  Public domain template: {}", config.getPublicDomainTemplate());
 
         // Setup metrics
         PrometheusMetricsExporter metricsExporter = new PrometheusMetricsExporter(config.getNodeId());
@@ -63,7 +48,7 @@ public class LoadBalancerApp {
             .block();
 
         Disposable heartbeats = redisService.subscribeToHeartbeats()
-            .doOnNext(loadBalancer::processHeartbeat)
+            .flatMap(loadBalancer::processHeartbeat)
             .subscribe();
 
         // Graceful shutdown

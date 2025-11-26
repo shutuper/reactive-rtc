@@ -20,7 +20,6 @@ import reactor.netty.http.websocket.WebsocketInbound;
 import reactor.netty.http.websocket.WebsocketOutbound;
 
 import java.util.Map;
-import java.util.UUID;
 
 /**
  * WebSocket handler for user connections.
@@ -150,8 +149,9 @@ public class WebSocketHandler {
 
 			Envelope msg = JsonUtils.readValue(messageJson, new TypeReference<>() {
 			});
+            msg.setTs(System.currentTimeMillis());
 
-			if (msg == null || msg.getType() == null) {
+			if (msg.getType() == null) {
 				log.warn("Received null or incomplete message from {}: {}", userId, messageJson);
 				return Mono.empty();
 			}
@@ -184,24 +184,8 @@ public class WebSocketHandler {
 		}
 	}
 
-	private Mono<Void> sendMessage(String userId, String toClientId, String payloadJson) {
-		Envelope envelope = Envelope.builder()
-				.msgId(UUID.randomUUID().toString())
-				.ts(System.currentTimeMillis())
-				.toClientId(toClientId)
-				.payloadJson(payloadJson)
-				.from(userId)
-				.type("chat")
-				.build();
-
-		return sendMessage(envelope);
-	}
-
 	private Mono<Void> sendMessage(Envelope envelope) {
 		log.info("Attempting to deliver message from {} to {}", envelope.getFrom(), envelope.getToClientId());
-
-		// Start latency timer
-		long startNanos = System.nanoTime();
 
 		// Try local delivery first
 		return sessionManager.deliverMessage(envelope)
@@ -209,14 +193,14 @@ public class WebSocketHandler {
 					if (delivered) {
 						log.info("Message delivered locally from {} to {}", envelope.getFrom(), envelope.getToClientId());
 						// Record latency for local delivery
-						metricsService.recordLatency(startNanos);
+						metricsService.recordLatencyMs(envelope.getTs());
 						return Mono.empty();
 					}
 					log.info("Message to {} not delivered locally, resolving target node", envelope.getToClientId());
 					return kafkaService.publishRelay(config.getNodeId(), envelope)
 							.doOnSuccess(v -> {
 								// Record latency for relay delivery (includes Kafka publish time)
-								metricsService.recordLatency(startNanos);
+								metricsService.recordLatencyMs(envelope.getTs());
 							})
 							.doOnError(err -> log.error("Failed to relay message from {} to {}", envelope.getFrom(),
 									envelope.getToClientId(), err));

@@ -1,6 +1,5 @@
 package com.qqsuccubus.core.msg;
 
-import com.fasterxml.jackson.annotation.JsonProperty;
 import lombok.*;
 
 /**
@@ -58,7 +57,6 @@ public class Envelope {
     /**
      * Timestamp when this message was created (epoch millis).
      */
-    @JsonProperty(access = JsonProperty.Access.READ_ONLY)
     @Builder.Default
     long ts = System.currentTimeMillis();
 

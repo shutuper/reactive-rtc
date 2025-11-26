@@ -16,9 +16,6 @@ public class LBConfig {
     int httpPort;
     String kafkaBootstrap;
     String redisUrl;
-    String publicDomainTemplate;
-    int ringVnodesPerWeight;//todo remove
-    String ringSecret;//todo remove
 
     // Scaling parameters
     double alpha;          // connection weight
@@ -42,14 +39,12 @@ public class LBConfig {
             .httpPort(Integer.parseInt(getEnv("HTTP_PORT", "8081")))
             .kafkaBootstrap(getEnv("KAFKA_BOOTSTRAP", "localhost:9092"))
             .redisUrl(getEnv("REDIS_URL", "redis://localhost:6379"))
-            .publicDomainTemplate(getEnv("PUBLIC_DOMAIN_TEMPLATE", "ws://localhost:%d/ws"))
-            .ringSecret(getEnv("RING_SECRET", "changeme-secret-key"))
             .alpha(Double.parseDouble(getEnv("ALPHA", "0.4")))
             .beta(Double.parseDouble(getEnv("BETA", "0.4")))
             .gamma(Double.parseDouble(getEnv("GAMMA", "0.2")))
             .delta(Double.parseDouble(getEnv("DELTA", "2.0")))
             .lSloMs(Double.parseDouble(getEnv("L_SLO_MS", "500.0")))
-            .scalingInterval(Duration.ofSeconds(Integer.parseInt(getEnv("SCALING_INTERVAL_SEC", "60"))))
+            .scalingInterval(Duration.ofSeconds(Integer.parseInt(getEnv("SCALING_INTERVAL_SEC", "30"))))
             .maxScaleStep(Integer.parseInt(getEnv("MAX_SCALE_STEP", "3")))
             .heartbeatGrace(Duration.ofSeconds(Integer.parseInt(getEnv("HEARTBEAT_GRACE_SEC", "90"))))
             .prometheusHost(getEnv("PROMETHEUS_HOST", "prometheus"))

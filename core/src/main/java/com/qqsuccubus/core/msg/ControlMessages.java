@@ -1,8 +1,6 @@
 package com.qqsuccubus.core.msg;
 
 import com.qqsuccubus.core.model.DistributionVersion;
-import com.qqsuccubus.core.model.RingSnapshot;
-import com.qqsuccubus.core.model.ScalingDirective;
 import lombok.Builder;
 import lombok.Value;
 import lombok.With;
@@ -30,11 +28,6 @@ public final class ControlMessages {
          * New distribution version.
          */
         DistributionVersion version;
-
-        /**
-         * Complete ring snapshot.
-         */
-        RingSnapshot ring;
 
         /**
          * Human-readable reason for this update (e.g., "node-3 joined").
@@ -98,10 +91,6 @@ public final class ControlMessages {
     @Builder(toBuilder = true)
     @With
     public static class ScaleSignal {
-        /**
-         * Scaling directive.
-         */
-        ScalingDirective directive;
 
         /**
          * Reason for this scaling decision.

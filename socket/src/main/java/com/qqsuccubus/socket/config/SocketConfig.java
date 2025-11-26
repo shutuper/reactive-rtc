@@ -28,7 +28,7 @@ public class SocketConfig {
                 .kafkaBootstrap(getEnv("KAFKA_BOOTSTRAP", "localhost:9092"))
                 .redisUrl(getEnv("REDIS_URL", "redis://localhost:6379"))
                 .bufferMax(Integer.parseInt(getEnv("BUFFER_MAX", "100")))
-                .resumeTtlSec(Integer.parseInt(getEnv("RESUME_TTL_SEC", "120")))
+                .resumeTtlSec(Integer.parseInt(getEnv("RESUME_TTL_SEC", "3600")))
                 .perConnBufferSize(Integer.parseInt(getEnv("PER_CONN_BUFFER_SIZE", "100")))
                 .pingInterval(Integer.parseInt(getEnv("PING_INTERVAL", "10")))
                 .idleTimeout(Integer.parseInt(getEnv("IDLE_TIMEOUT", "20")))
