@@ -11,6 +11,7 @@ import io.micrometer.core.instrument.binder.jvm.JvmMemoryMetrics;
 import io.micrometer.core.instrument.binder.system.ProcessorMetrics;
 
 import java.time.Duration;
+import java.util.concurrent.TimeUnit;
 
 /**
  * Centralized metrics service for socket node.
@@ -36,6 +37,7 @@ public class MetricsService {
     // Timers
     private final Timer latency;
     private final Timer kafkaPublishLatency;
+    private final Timer kafkaDeliryTopicLatency;
 
     public MetricsService(MeterRegistry registry, SocketConfig config) {
 
@@ -123,12 +125,24 @@ public class MetricsService {
             .description("Kafka message publish latency")
             .publishPercentileHistogram()
             .serviceLevelObjectives(
-                Duration.ofMillis(5),
                 Duration.ofMillis(10),
-                Duration.ofMillis(25),
                 Duration.ofMillis(50),
                 Duration.ofMillis(100),
-                Duration.ofMillis(250)
+                Duration.ofMillis(250),
+                Duration.ofMillis(500)
+            )
+            .register(registry);
+
+        kafkaDeliryTopicLatency = Timer.builder(MetricsNames.KAFKA_DELIVERY_TOPIC_LAG_LATENCY)
+            .tag(MetricsTags.TOPIC, "delivery_node")
+            .description("Kafka delivery topic read lag latency")
+            .publishPercentileHistogram()
+            .serviceLevelObjectives(
+                Duration.ofMillis(10),
+                Duration.ofMillis(50),
+                Duration.ofMillis(100),
+                Duration.ofMillis(250),
+                Duration.ofMillis(500)
             )
             .register(registry);
     }
@@ -168,6 +182,15 @@ public class MetricsService {
      */
     public void recordKafkaPublishLatency(long startNanos) {
         kafkaPublishLatency.record(Duration.ofNanos(System.nanoTime() - startNanos));
+    }
+
+    /**
+     * Records Kafka read lag latency.
+     *
+     * @param startMillis start millis
+     */
+    public void recordKafkaDeliveryTopicLatency(long startMillis) {
+        kafkaDeliryTopicLatency.record(System.currentTimeMillis() - startMillis, TimeUnit.MILLISECONDS);
     }
 
     /**

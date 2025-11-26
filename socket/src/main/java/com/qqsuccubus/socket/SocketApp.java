@@ -10,6 +10,7 @@ import com.qqsuccubus.socket.session.SessionManager;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.slf4j.MDC;
+import reactor.core.Disposable;
 
 import java.time.Duration;
 
@@ -58,21 +59,23 @@ public class SocketApp {
 
         // Start HTTP + WebSocket server
         HttpServer httpServer = new HttpServer(
-                config,
-                sessionManager,
-                kafkaService,
-                metricsService,
-                metricsExporter
+            config,
+            sessionManager,
+            kafkaService,
+            metricsService,
+            metricsExporter
         );
 
         httpServer.start()
-                .doOnNext(port -> log.info("HTTP server started on port {}", port))
-                .doOnError(err -> log.error("Failed to start HTTP server", err))
-                .block();
+            .doOnNext(port -> log.info("HTTP server started on port {}", port))
+            .doOnError(err -> log.error("Failed to start HTTP server", err))
+            .block();
+
+        Disposable heartbeats = redisService.startHeartbeats();
 
         log.info("Socket node {} is ready", config.getNodeId());
 
-        handleShutdown(config, sessionManager, kafkaService, httpServer, redisService);
+        handleShutdown(config, sessionManager, kafkaService, httpServer, redisService, heartbeats);
 
         // Keep the application running until shutdown signal
         try {
@@ -87,11 +90,14 @@ public class SocketApp {
                                        SessionManager sessionManager,
                                        KafkaService kafkaService,
                                        HttpServer httpServer,
-                                       RedisService redisService) {
+                                       RedisService redisService,
+                                       Disposable heartbeats) {
         // Graceful shutdown hook
         Runtime.getRuntime().addShutdownHook(new Thread(() -> {
             log.info("Shutdown signal received, initiating graceful shutdown...");
             MDC.put("nodeId", config.getNodeId());
+
+            heartbeats.dispose();
 
             // Stop Kafka
             kafkaService.stop().block(Duration.ofSeconds(10));

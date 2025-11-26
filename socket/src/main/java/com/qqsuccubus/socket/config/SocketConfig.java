@@ -9,6 +9,7 @@ import lombok.Value;
 @Value
 @Builder(toBuilder = true)
 public class SocketConfig {
+
     String nodeId;
     int httpPort;
     String kafkaBootstrap;

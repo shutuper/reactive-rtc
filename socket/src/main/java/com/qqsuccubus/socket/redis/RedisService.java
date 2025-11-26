@@ -7,9 +7,11 @@ import io.lettuce.core.api.StatefulRedisConnection;
 import io.lettuce.core.api.reactive.RedisReactiveCommands;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import reactor.core.Disposable;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
+import java.time.Duration;
 import java.time.Instant;
 import java.util.HashMap;
 import java.util.Map;
@@ -35,6 +37,15 @@ public class RedisService implements IRedisService {
         this.connection = client.connect();
         this.commands = connection.reactive();
         log.info("Connected to Redis: {}", config.getRedisUrl());
+    }
+
+    public Disposable startHeartbeats() {
+        return Flux.interval(Duration.ZERO, Duration.ofSeconds(10))
+            .flatMap(tick -> commands.hset(Keys.heartbeats(), Map.of(
+                config.getNodeId(), String.valueOf(System.currentTimeMillis())
+            )))
+            .thenMany(commands.hexpire(Keys.heartbeats(), 20, config.getNodeId()))
+            .subscribe();
     }
 
     /**

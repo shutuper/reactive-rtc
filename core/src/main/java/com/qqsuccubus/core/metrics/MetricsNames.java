@@ -110,6 +110,7 @@ public final class MetricsNames {
      * </p>
      */
     public static final String KAFKA_PUBLISH_LATENCY = "rtc.kafka.publish.latency";
+    public static final String KAFKA_DELIVERY_TOPIC_LAG_LATENCY = "rtc.kafka.delivery.topic.lag.latency";
 
     /**
      * Timer: Redis operation latency.

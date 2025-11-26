@@ -188,9 +188,13 @@ public class KafkaService implements IKafkaService {
                 try {
                     // Record inbound Kafka traffic
                     String messageValue = record.value();
+
                     metricsService.recordNetworkInboundKafka(BytesUtils.getBytesLength(messageValue));
 
                     Envelope envelope = JsonUtils.readValue(messageValue, Envelope.class);
+
+                    metricsService.recordKafkaDeliveryTopicLatency(envelope.getTs());
+
                     log.info(
                         "Kafka message received for node {}: from={}, to={}, msgId={}, envelope.nodeId={}",
                         currentNodeId, envelope.getFrom(), envelope.getToClientId(),

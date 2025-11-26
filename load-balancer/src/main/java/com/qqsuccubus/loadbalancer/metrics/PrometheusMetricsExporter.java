@@ -1,73 +1,43 @@
 package com.qqsuccubus.loadbalancer.metrics;
 
-import io.micrometer.core.instrument.Meter;
 import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.composite.CompositeMeterRegistry;
+import io.micrometer.prometheusmetrics.PrometheusConfig;
+import io.micrometer.prometheusmetrics.PrometheusMeterRegistry;
+import lombok.Getter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import reactor.netty.Metrics;
 
 /**
- * Prometheus metrics exporter for load-balancer.
+ * Prometheus metrics exporter with proper registry management.
+ * Uses Micrometer's official Prometheus integration.
  */
 public class PrometheusMetricsExporter {
     private static final Logger log = LoggerFactory.getLogger(PrometheusMetricsExporter.class);
 
+    @Getter
     private final MeterRegistry registry;
+    private final PrometheusMeterRegistry prometheusRegistry;
 
-    public PrometheusMetricsExporter(MeterRegistry registry) {
-        this.registry = registry;
-    }
+    public PrometheusMetricsExporter(String nodeId) {
+        this.registry = Metrics.REGISTRY;
 
-    /**
-     * Scrapes current metrics in Prometheus text format.
-     *
-     * @return Prometheus-formatted metrics string
-     */
-    public String scrape() {
-        StringBuilder sb = new StringBuilder();
-
-        // Export all meters
-        for (Meter meter : registry.getMeters()) {
-            String name = meter.getId().getName().replace('.', '_');
-            String type = determineType(meter.getId().getType().name());
-
-            sb.append("# HELP ").append(name).append(" ");
-            if (meter.getId().getDescription() != null) {
-                sb.append(meter.getId().getDescription());
-            }
-            sb.append("\n");
-            sb.append("# TYPE ").append(name).append(" ").append(type).append("\n");
-
-            meter.measure().forEach(measurement -> {
-                sb.append(name);
-
-                // Add tags
-                if (!meter.getId().getTags().isEmpty()) {
-                    sb.append("{");
-                    meter.getId().getTags().forEach(tag ->
-                            sb.append(tag.getKey()).append("=\"").append(tag.getValue()).append("\",")
-                    );
-                    sb.setLength(sb.length() - 1); // Remove trailing comma
-                    sb.append("}");
-                }
-
-                sb.append(" ").append(measurement.getValue()).append("\n");
-            });
-            sb.append("\n");
+        // Create a Prometheus registry and add it to the global composite
+        this.prometheusRegistry = new PrometheusMeterRegistry(PrometheusConfig.DEFAULT);
+        if (registry instanceof CompositeMeterRegistry composite) {
+            composite.add(prometheusRegistry);
         }
 
-        return sb.toString();
+        registry.config().commonTags("node_id", nodeId);
+        log.info("Metrics exporter initialized with global registry + Prometheus");
     }
 
-    private String determineType(String meterType) {
-        return switch (meterType) {
-            case "COUNTER" -> "counter";
-            case "GAUGE" -> "gauge";
-            case "TIMER", "DISTRIBUTION_SUMMARY" -> "histogram";
-            case "LONG_TASK_TIMER" -> "gauge";
-            default -> "untyped";
-        };
+    public String scrape() {
+        return prometheusRegistry.scrape();
     }
 }
+
 
 
 

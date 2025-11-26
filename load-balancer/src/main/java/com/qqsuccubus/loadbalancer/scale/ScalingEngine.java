@@ -87,29 +87,30 @@ public class ScalingEngine {
         double maxCpu = heartbeats.stream().mapToDouble(Heartbeat::getCpu).max().orElse(0.0);
         double maxMem = heartbeats.stream().mapToDouble(Heartbeat::getMem).max().orElse(0.0);
 
-        // Compute required replicas (connections, throughput, latency)
-        int rConn = (int) Math.ceil(config.getAlpha() * totalConn / config.getConnPerPod());
-        int rMps = (int) Math.ceil(config.getBeta() * totalMps / config.getMpsPerPod());
+        // Compute required replicas based on different dimensions
+
+        // Latency-based scaling
         double latencyRatio = Math.max(0, maxP95 / config.getLSloMs() - 1);
         int rLat = (int) Math.ceil(config.getGamma() * Math.exp(config.getDelta() * latencyRatio));
 
-        // NEW: CPU-based scaling (scale if average CPU > 70% or any node > 85%)
+        // CPU-based scaling (scale if average CPU > 70% or any node > 85%)
         int rCpu = 0;
         if (avgCpu > 0.7 || maxCpu > 0.85) {
             rCpu = (int) Math.ceil(heartbeats.size() * Math.max(avgCpu, maxCpu) / 0.7);
         }
 
-        // NEW: Memory-based scaling (scale if average memory > 75% or any node > 90%)
+        // Memory-based scaling (scale if average memory > 75% or any node > 90%)
         int rMem = 0;
         if (avgMem > 0.75 || maxMem > 0.90) {
             rMem = (int) Math.ceil(heartbeats.size() * Math.max(avgMem, maxMem) / 0.75);
         }
 
-        int targetReplicas = Math.max(Math.max(rConn, rMps), Math.max(rLat, Math.max(rCpu, rMem)));
+        // Take maximum across all dimensions
+        int targetReplicas = Math.max(rLat, Math.max(rCpu, rMem));
         targetReplicas = Math.max(1, targetReplicas); // Minimum 1 replica
 
-        log.info("Scaling computation: conn={}, mps={}, p95={}ms, cpu={}, mem={}, target={} (rConn={}, rMps={}, rLat={}, rCpu={}, rMem={})",
-                totalConn, totalMps, maxP95, avgCpu, avgMem, targetReplicas, rConn, rMps, rLat, rCpu, rMem);
+        log.info("Scaling computation: conn={}, mps={}, p95={}ms, cpu={}, mem={}, target={} (rLat={}, rCpu={}, rMem={})",
+                totalConn, totalMps, maxP95, avgCpu, avgMem, targetReplicas, rLat, rCpu, rMem);
 
         // Throttle scaling decisions
         long now = System.currentTimeMillis();
@@ -177,8 +178,7 @@ public class ScalingEngine {
                     .ts(now)
                     .build();
 
-            return kafkaPublisher.publishScaleSignal(scaleSignal)
-                    .thenReturn(directive);
+            return kafkaPublisher.publishScaleSignal(scaleSignal).thenReturn(directive);
         }
 
         return Mono.just(directive);

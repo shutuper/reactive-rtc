@@ -1,7 +1,7 @@
 package com.qqsuccubus.loadbalancer.metrics;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import com.qqsuccubus.core.util.JsonUtils;
 import io.netty.handler.codec.http.HttpHeaderNames;
 import io.netty.handler.codec.http.HttpHeaderValues;
 import lombok.Data;
@@ -27,7 +27,6 @@ import java.util.Map;
  */
 public class PrometheusQueryService {
     private static final Logger log = LoggerFactory.getLogger(PrometheusQueryService.class);
-    private static final ObjectMapper MAPPER = new ObjectMapper();
 
     private final HttpClient httpClient;
 
@@ -42,7 +41,7 @@ public class PrometheusQueryService {
                 .host(prometheusHost)
                 .port(prometheusPort)
                 .headers(h -> h.set(HttpHeaderNames.ACCEPT, HttpHeaderValues.APPLICATION_JSON))
-                .responseTimeout(Duration.ofSeconds(10));
+                .responseTimeout(Duration.ofSeconds(30));
 
         log.info("PrometheusQueryService initialized with {}:{}", prometheusHost, prometheusPort);
     }
@@ -65,11 +64,10 @@ public class PrometheusQueryService {
                 .responseContent()
                 .aggregate()
                 .asString()
-                .timeout(Duration.ofSeconds(10))
                 .retry(5)
                 .flatMap(responseBody -> {
                     try {
-                        PrometheusResponse response = MAPPER.readValue(responseBody, PrometheusResponse.class);
+                        PrometheusResponse response = JsonUtils.readValue(responseBody, PrometheusResponse.class);
 
                         if (!"success".equalsIgnoreCase(response.getStatus())) {
                             log.error("Prometheus query failed: {}", response.getError());
@@ -221,7 +219,7 @@ public class PrometheusQueryService {
 
             log.info("Metrics summary: throughput={}msg/s, p95={}ms, connections={}, lag={}, nodes={}",
                     summary.getTotalThroughput(),
-                    summary.getP95LatencySeconds() * 1000,
+                    summary.getP95LatencySeconds(),
                     summary.getTotalConnections(),
                     summary.getTotalConsumerLag(),
                     summary.getNodeCount());
@@ -276,5 +274,6 @@ public class PrometheusQueryService {
         private List<Object> value;
     }
 }
+
 
 

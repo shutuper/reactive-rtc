@@ -31,6 +31,12 @@
             <artifactId>reactor-netty-http</artifactId>
         </dependency>
 
+      <!-- Redis (Lettuce) -->
+      <dependency>
+        <groupId>io.lettuce</groupId>
+        <artifactId>lettuce-core</artifactId>
+      </dependency>
+
         <!-- Reactor Kafka -->
         <dependency>
             <groupId>io.projectreactor.kafka</groupId>

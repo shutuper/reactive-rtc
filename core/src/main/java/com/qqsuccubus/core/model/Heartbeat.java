@@ -35,7 +35,10 @@ public class Heartbeat {
      */
     double p95LatencyMs;
 
-    double queueDepth;
+    /**
+     * delivery_node topic read latency last value
+     */
+    double kafkaTopicLagLatencyMs;
 
     /**
      * CPU utilization as a percentage (0.0 to 1.0).

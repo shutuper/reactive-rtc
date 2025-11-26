@@ -66,7 +66,7 @@ Backoff formula: `t_k = min(T_max, T_0 × 2^k) + U(0, J)`
 **Purpose**: Shared models, utilities, and algorithms.
 
 **Key Classes**:
-- `ConsistentHashRing`: Weighted hash ring with virtual nodes
+- `SkeletonWeightedRendezvousHash`: Hierarchical weighted rendezvous hashing with O(log n) lookup
 - `ResumeToken`: HMAC-signed tokens for resume
 - `Envelope`: Universal message wrapper
 - `Hashers`: Murmur3 and SHA-256 utilities

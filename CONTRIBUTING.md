@@ -104,7 +104,7 @@ mvn test
 mvn test -pl core
 
 # Specific test class
-mvn test -Dtest=ConsistentHashRingTest
+mvn test -Dtest=SkeletonWeightedRendezvousHashTest
 
 # Verification
 mvn verify

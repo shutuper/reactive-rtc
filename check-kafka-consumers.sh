@@ -77,3 +77,4 @@ else
     echo "✓ All consumer groups active"
 fi
 
+

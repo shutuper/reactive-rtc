@@ -3,13 +3,14 @@ package com.qqsuccubus.loadbalancer;
 import com.qqsuccubus.loadbalancer.config.LBConfig;
 import com.qqsuccubus.loadbalancer.http.HttpServer;
 import com.qqsuccubus.loadbalancer.kafka.KafkaPublisher;
-import com.qqsuccubus.loadbalancer.ring.RingManager;
+import com.qqsuccubus.loadbalancer.metrics.PrometheusMetricsExporter;
+import com.qqsuccubus.loadbalancer.redis.RedisService;
+import com.qqsuccubus.loadbalancer.ring.LoadBalancer;
 import com.qqsuccubus.loadbalancer.scale.LoadRedistributor;
 import com.qqsuccubus.loadbalancer.scale.ScalingEngine;
-import io.micrometer.core.instrument.MeterRegistry;
-import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import reactor.core.Disposable;
 
 /**
  * Main entry point for the Load-Balancer control plane.
@@ -36,15 +37,16 @@ public class LoadBalancerApp {
         log.info("  Public domain template: {}", config.getPublicDomainTemplate());
 
         // Setup metrics
-        MeterRegistry meterRegistry = new SimpleMeterRegistry();
+        PrometheusMetricsExporter metricsExporter = new PrometheusMetricsExporter(config.getNodeId());
 
         // Initialize components
+        RedisService redisService = new RedisService(config);
         KafkaPublisher kafkaPublisher = new KafkaPublisher(config);
-        RingManager ringManager = new RingManager(config, kafkaPublisher, meterRegistry);
-        ScalingEngine scalingEngine = new ScalingEngine(config, kafkaPublisher, meterRegistry);
+        LoadBalancer loadBalancer = new LoadBalancer(config, kafkaPublisher, metricsExporter.getRegistry());
+        ScalingEngine scalingEngine = new ScalingEngine(config, kafkaPublisher, metricsExporter.getRegistry());
 
         // Start load redistributor for graceful load balancing
-        LoadRedistributor loadRedistributor = new LoadRedistributor(ringManager, kafkaPublisher, config);
+        LoadRedistributor loadRedistributor = new LoadRedistributor(loadBalancer, kafkaPublisher, config);
         loadRedistributor.start().subscribe(
                 v -> {},
                 err -> log.error("Load redistributor error", err)
@@ -52,16 +54,23 @@ public class LoadBalancerApp {
         log.info("Load redistributor started (checking every 5 minutes)");
 
         // Start HTTP server
-        HttpServer httpServer = new HttpServer(config, ringManager, scalingEngine, meterRegistry);
+        HttpServer httpServer = new HttpServer(config, loadBalancer, scalingEngine, metricsExporter);
+
         httpServer.start()
                 .doOnNext(port -> log.info("HTTP server started on port {}", port))
                 .doOnError(err -> log.error("Failed to start HTTP server", err))
                 .block();
 
+        Disposable heartbeats = redisService.subscribeToHeartbeats(loadBalancer::processHeartbeat);
+
         // Graceful shutdown
         Runtime.getRuntime().addShutdownHook(new Thread(() -> {
             log.info("Shutdown signal received");
+            heartbeats.dispose();
+
             kafkaPublisher.close();
+
+            httpServer.stop();
             log.info("Shutdown complete");
         }));
 

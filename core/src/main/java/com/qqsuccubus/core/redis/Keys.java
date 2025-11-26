@@ -37,6 +37,10 @@ public final class Keys {
         return "sess:" + clientId;
     }
 
+    public static String heartbeats() {
+        return "heartbeats";
+    }
+
     /**
      * Message buffer key for a user: {@code buf:{clientId}}
      * <p>

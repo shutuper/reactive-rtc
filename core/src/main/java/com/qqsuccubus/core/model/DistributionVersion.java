@@ -30,10 +30,10 @@ public class DistributionVersion {
     Instant issuedAt;
 
     /**
-     * Unique identifier for the ring configuration (e.g., hash of node set).
+     * Unique identifier for the version configuration (e.g., hash of node set).
      * Used to detect configuration drift.
      */
-    String ringId;
+    String versionHash;
 }
 
 

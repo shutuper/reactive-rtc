@@ -278,3 +278,4 @@ Before going to production, verify:
 **Questions?** Check the full guide: [KAFKA_MONITORING_GUIDE.md](./KAFKA_MONITORING_GUIDE.md)
 
 
+

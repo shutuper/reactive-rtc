@@ -3,8 +3,8 @@ package com.qqsuccubus.loadbalancer.scale;
 import com.qqsuccubus.core.msg.ControlMessages;
 import com.qqsuccubus.loadbalancer.config.LBConfig;
 import com.qqsuccubus.loadbalancer.kafka.IRingPublisher;
-import com.qqsuccubus.loadbalancer.ring.IRingManager;
-import com.qqsuccubus.loadbalancer.ring.RingManager.NodeEntry;
+import com.qqsuccubus.loadbalancer.ring.ILoadBalancer;
+import com.qqsuccubus.loadbalancer.ring.LoadBalancer.NodeEntry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Flux;
@@ -26,11 +26,11 @@ import java.util.Optional;
 public class LoadRedistributor {
     private static final Logger log = LoggerFactory.getLogger(LoadRedistributor.class);
 
-    private final IRingManager ringManager;
+    private final ILoadBalancer ringManager;
     private final IRingPublisher kafkaPublisher;
     private final LBConfig config;
 
-    public LoadRedistributor(IRingManager ringManager, IRingPublisher kafkaPublisher, LBConfig config) {
+    public LoadRedistributor(ILoadBalancer ringManager, IRingPublisher kafkaPublisher, LBConfig config) {
         this.ringManager = ringManager;
         this.kafkaPublisher = kafkaPublisher;
         this.config = config;
@@ -104,7 +104,7 @@ public class LoadRedistributor {
     private void triggerRedistribution(Map<String, NodeEntry> nodes, int maxLoad) {
         for (Map.Entry<String, NodeEntry> entry : nodes.entrySet()) {
             NodeEntry nodeEntry = entry.getValue();
-            int nodeLoad = Optional.of(nodeEntry.lastHeartbeat.getActiveConn()).orElse(0);
+            int nodeLoad = Optional.of(nodeEntry.lastHeartbeat().getActiveConn()).orElse(0);
 
             // If this node is overloaded (more than 20% above average)
             if (nodeLoad > maxLoad * 0.8) {

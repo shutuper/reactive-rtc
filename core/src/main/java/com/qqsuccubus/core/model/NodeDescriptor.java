@@ -4,8 +4,6 @@ import lombok.Builder;
 import lombok.Value;
 import lombok.With;
 
-import java.util.Map;
-
 /**
  * Immutable descriptor for a socket node in the cluster.
  * <p>
@@ -28,30 +26,11 @@ public class NodeDescriptor {
     String publicWsUrl;
 
     /**
-     * Deployment zone or availability zone (for topology-aware placement).
-     */
-    String zone;
-
-    /**
      * Weight factor for the consistent hash ring. Higher weight = more virtual nodes.
      * Determines the proportion of key space assigned to this node.
      */
     int weight;
 
-    /**
-     * Maximum concurrent connections this node can handle.
-     */
-    int capacityConn;
-
-    /**
-     * Maximum messages per second this node can handle.
-     */
-    int capacityMps;
-
-    /**
-     * Optional metadata (e.g., version, build, custom tags).
-     */
-    Map<String, String> meta;
 }
 
 
