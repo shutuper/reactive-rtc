@@ -66,7 +66,8 @@ public class NodeMetrics {
     /**
      * Whether this node is healthy and reachable.
      */
-    private boolean healthy;
+    @Builder.Default
+    private boolean healthy =  true;
 
     /**
      * Gets total network bandwidth (inbound + outbound) in bytes/sec.

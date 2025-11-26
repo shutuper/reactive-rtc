@@ -43,7 +43,6 @@ public class LBConfig {
             .kafkaBootstrap(getEnv("KAFKA_BOOTSTRAP", "localhost:9092"))
             .redisUrl(getEnv("REDIS_URL", "redis://localhost:6379"))
             .publicDomainTemplate(getEnv("PUBLIC_DOMAIN_TEMPLATE", "ws://localhost:%d/ws"))
-            .ringVnodesPerWeight(Integer.parseInt(getEnv("RING_VNODES_PER_WEIGHT", "150")))
             .ringSecret(getEnv("RING_SECRET", "changeme-secret-key"))
             .alpha(Double.parseDouble(getEnv("ALPHA", "0.4")))
             .beta(Double.parseDouble(getEnv("BETA", "0.4")))

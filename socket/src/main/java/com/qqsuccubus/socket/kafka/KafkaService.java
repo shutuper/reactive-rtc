@@ -193,8 +193,6 @@ public class KafkaService implements IKafkaService {
 
                     Envelope envelope = JsonUtils.readValue(messageValue, Envelope.class);
 
-                    metricsService.recordKafkaDeliveryTopicLatency(envelope.getTs());
-
                     log.info(
                         "Kafka message received for node {}: from={}, to={}, msgId={}, envelope.nodeId={}",
                         currentNodeId, envelope.getFrom(), envelope.getToClientId(),
@@ -210,6 +208,7 @@ public class KafkaService implements IKafkaService {
                             if (delivered) {
                                 // Successfully delivered to connected client
                                 log.info("Message delivered to connected client: {}", envelope.getToClientId());
+
                                 metricsService.recordDeliverRelay();
                                 // Record relay delivery latency (Kafka consumer -> client delivery)
                                 metricsService.recordLatency(relayStartNanos);

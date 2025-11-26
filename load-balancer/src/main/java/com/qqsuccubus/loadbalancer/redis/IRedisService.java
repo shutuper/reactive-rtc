@@ -1,9 +1,8 @@
 package com.qqsuccubus.loadbalancer.redis;
 
-import reactor.core.Disposable;
+import reactor.core.publisher.Flux;
 
 import java.util.List;
-import java.util.function.Consumer;
 
 /**
  * Interface for Redis operations (Dependency Inversion Principle).
@@ -13,7 +12,7 @@ import java.util.function.Consumer;
  */
 public interface IRedisService {
 
-    Disposable subscribeToHeartbeats(Consumer<List<String>> handleActiveNodesHeartbeat);
+    Flux<List<String>> subscribeToHeartbeats();
 
     /**
      * Closes Redis connection.

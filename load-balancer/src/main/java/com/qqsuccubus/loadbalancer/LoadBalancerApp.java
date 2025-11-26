@@ -3,11 +3,11 @@ package com.qqsuccubus.loadbalancer;
 import com.qqsuccubus.loadbalancer.config.LBConfig;
 import com.qqsuccubus.loadbalancer.http.HttpServer;
 import com.qqsuccubus.loadbalancer.kafka.KafkaPublisher;
+import com.qqsuccubus.loadbalancer.metrics.NodeMetricsService;
 import com.qqsuccubus.loadbalancer.metrics.PrometheusMetricsExporter;
+import com.qqsuccubus.loadbalancer.metrics.PrometheusQueryService;
 import com.qqsuccubus.loadbalancer.redis.RedisService;
 import com.qqsuccubus.loadbalancer.ring.LoadBalancer;
-import com.qqsuccubus.loadbalancer.scale.LoadRedistributor;
-import com.qqsuccubus.loadbalancer.scale.ScalingEngine;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.Disposable;
@@ -38,30 +38,33 @@ public class LoadBalancerApp {
 
         // Setup metrics
         PrometheusMetricsExporter metricsExporter = new PrometheusMetricsExporter(config.getNodeId());
+        PrometheusQueryService prometheusQueryService = new PrometheusQueryService(
+            config.getPrometheusHost(), config.getPrometheusPort()
+        );
+        NodeMetricsService nodeMetricsService = new NodeMetricsService(prometheusQueryService);
 
         // Initialize components
         RedisService redisService = new RedisService(config);
         KafkaPublisher kafkaPublisher = new KafkaPublisher(config);
-        LoadBalancer loadBalancer = new LoadBalancer(config, kafkaPublisher, metricsExporter.getRegistry());
-        ScalingEngine scalingEngine = new ScalingEngine(config, kafkaPublisher, metricsExporter.getRegistry());
-
-        // Start load redistributor for graceful load balancing
-        LoadRedistributor loadRedistributor = new LoadRedistributor(loadBalancer, kafkaPublisher, config);
-        loadRedistributor.start().subscribe(
-                v -> {},
-                err -> log.error("Load redistributor error", err)
-        );
-        log.info("Load redistributor started (checking every 5 minutes)");
+        LoadBalancer loadBalancer = new LoadBalancer(config, kafkaPublisher, metricsExporter.getRegistry(), nodeMetricsService);
 
         // Start HTTP server
-        HttpServer httpServer = new HttpServer(config, loadBalancer, scalingEngine, metricsExporter);
+        HttpServer httpServer = new HttpServer(
+            config,
+            loadBalancer,
+            metricsExporter,
+            prometheusQueryService,
+            nodeMetricsService
+        );
 
         httpServer.start()
-                .doOnNext(port -> log.info("HTTP server started on port {}", port))
-                .doOnError(err -> log.error("Failed to start HTTP server", err))
-                .block();
+            .doOnNext(port -> log.info("HTTP server started on port {}", port))
+            .doOnError(err -> log.error("Failed to start HTTP server", err))
+            .block();
 
-        Disposable heartbeats = redisService.subscribeToHeartbeats(loadBalancer::processHeartbeat);
+        Disposable heartbeats = redisService.subscribeToHeartbeats()
+            .doOnNext(loadBalancer::processHeartbeat)
+            .subscribe();
 
         // Graceful shutdown
         Runtime.getRuntime().addShutdownHook(new Thread(() -> {

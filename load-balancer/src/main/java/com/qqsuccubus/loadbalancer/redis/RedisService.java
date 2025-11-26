@@ -8,12 +8,10 @@ import io.lettuce.core.api.StatefulRedisConnection;
 import io.lettuce.core.api.reactive.RedisReactiveCommands;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import reactor.core.Disposable;
 import reactor.core.publisher.Flux;
 
 import java.time.Duration;
 import java.util.List;
-import java.util.function.Consumer;
 
 /**
  * Reactive Redis service for session management and message buffering.
@@ -36,12 +34,12 @@ public class RedisService implements IRedisService {
         log.info("Connected to Redis: {}", config.getRedisUrl());
     }
 
-    public Disposable subscribeToHeartbeats(Consumer<List<String>> handleActiveNodesHeartbeat) {
+    public Flux<List<String>> subscribeToHeartbeats() {
         return Flux.interval(Duration.ZERO, Duration.ofSeconds(20))
             .flatMap(tick -> commands.hgetall(Keys.heartbeats())
                 .map(KeyValue::getKey)
                 .collectList() // Collects keys for this specific tick only
-            ).subscribe(handleActiveNodesHeartbeat);
+            );
     }
 
     @Override

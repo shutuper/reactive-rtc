@@ -1,17 +1,5 @@
 package com.qqsuccubus.core.msg;
 
-/**
- * Kafka topic names used across the system.
- * <p>
- * <b>Topic partitioning strategy:</b>
- * <ul>
- *   <li>{@code CONTROL_*}: Single partition (global broadcast)</li>
- *   <li>{@code DELIVERY_NODE}: Key = targetNodeId (ensures all messages for a node go to same partition)</li>
- *   <li>{@code DELIVERY_BROADCAST}: Key = channelId (per-channel ordering)</li>
- *   <li>{@code METRICS_NODE}: Key = nodeId (per-node metrics stream)</li>
- * </ul>
- * </p>
- */
 public final class Topics {
     private Topics() {
     }
@@ -34,25 +22,5 @@ public final class Topics {
      */
     public static final String CONTROL_DRAIN = "rtc.control.drain";
 
-    /**
-     * Delivery topic for node-targeted messages (two-hop relay).
-     * Key = targetNodeId, value = Envelope.
-     * Each socket node consumes with group.id = nodeId.
-     */
-    public static final String DELIVERY_NODE = "rtc.delivery.node";
-
-    /**
-     * Delivery topic for broadcast messages (e.g., channels, rooms).
-     * Key = channelId, value = Envelope.
-     * All nodes consume to fan out to local subscribers.
-     */
-    public static final String DELIVERY_BROADCAST = "rtc.delivery.broadcast";
-
-    /**
-     * Metrics topic for node heartbeats and telemetry.
-     * Key = nodeId, value = Heartbeat or custom metrics.
-     * Consumed by monitoring systems.
-     */
-    public static final String METRICS_NODE = "rtc.metrics.node";
 }
 

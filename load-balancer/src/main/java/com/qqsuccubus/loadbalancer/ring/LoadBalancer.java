@@ -5,10 +5,11 @@ import com.qqsuccubus.core.hash.SkeletonWeightedRendezvousHash;
 import com.qqsuccubus.core.metrics.MetricsNames;
 import com.qqsuccubus.core.model.DistributionVersion;
 import com.qqsuccubus.core.model.Heartbeat;
-import com.qqsuccubus.core.model.RingSnapshot;
 import com.qqsuccubus.core.msg.ControlMessages;
 import com.qqsuccubus.loadbalancer.config.LBConfig;
 import com.qqsuccubus.loadbalancer.kafka.IRingPublisher;
+import com.qqsuccubus.loadbalancer.metrics.NodeMetrics;
+import com.qqsuccubus.loadbalancer.metrics.NodeMetricsService;
 import io.micrometer.core.instrument.Gauge;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.netty.util.internal.PlatformDependent;
@@ -16,7 +17,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Mono;
 
-import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.*;
 import java.util.concurrent.atomic.AtomicLong;
@@ -34,6 +34,7 @@ public class LoadBalancer implements ILoadBalancer {
 
     private final AtomicLong versionCounter = new AtomicLong(1);
     private final IRingPublisher kafkaPublisher;
+    private final NodeMetricsService nodeMetricsService;
     private final LBConfig config;
 
     // Node registry: nodeId -> (descriptor, lastHeartbeat)
@@ -43,9 +44,13 @@ public class LoadBalancer implements ILoadBalancer {
     private volatile SkeletonWeightedRendezvousHash currentHash;
     private volatile DistributionVersion currentVersion;
 
-    public LoadBalancer(LBConfig config, IRingPublisher kafkaPublisher, MeterRegistry meterRegistry) {
+    public LoadBalancer(LBConfig config,
+                        IRingPublisher kafkaPublisher,
+                        MeterRegistry meterRegistry,
+                        NodeMetricsService nodeMetricsService) {
         this.kafkaPublisher = kafkaPublisher;
         this.config = config;
+        this.nodeMetricsService = nodeMetricsService;
 
         // Initialize empty ring
         this.currentHash = new SkeletonWeightedRendezvousHash(Collections.emptyMap());
@@ -59,12 +64,13 @@ public class LoadBalancer implements ILoadBalancer {
         startPeriodicCleanup();
     }
 
-    /**
-     * Processes a heartbeat from a socket node.
-     *
-     * @param heartbeat Heartbeat message
-     */
+
     public void processHeartbeat(List<String> activeNodes) {
+        if (activeNodes == null || activeNodes.isEmpty()) {
+            return;
+        }
+
+        long timestampMs = System.currentTimeMillis();
         Set<String> prevActiveNodes = nodeRegistry.keySet();
 
         Set<String> newNodes = activeNodes.stream()
@@ -75,31 +81,76 @@ public class LoadBalancer implements ILoadBalancer {
             .filter(node -> !activeNodes.contains(node))
             .collect(Collectors.toSet());
 
-        if (removedNodes.isEmpty() && newNodes.isEmpty()) {
-            return; //todo proceed
-        }
+        boolean noTopolyUpdates = removedNodes.isEmpty() && newNodes.isEmpty();
 
-        String nodeId = heartbeat.getNodeId();
-        NodeDescriptor descriptor = toNodeDescriptor(heartbeat);
+        nodeMetricsService.getAllNodeMetrics().map(
+                nodesWithMetrics -> activeNodes.stream().map(nodeId -> {
+                    NodeMetrics nodeMetrics = nodesWithMetrics.getOrDefault(
+                        nodeId, NodeMetrics.builder().nodeId(nodeId).build()
+                    );
 
-        NodeEntry existing = nodeRegistry.get(nodeId);
-        boolean isNew = (existing == null);
+                    NodeEntry nodeEntry = nodeRegistry.get(nodeId);
+                    Heartbeat heartbeat = Heartbeat.builder()
+                        .nodeId(nodeId)
+                        .mem(nodeMetrics.getMem())
+                        .mps(nodeMetrics.getMps())
+                        .cpu(nodeMetrics.getCpu())
+                        .activeConn(nodeMetrics.getActiveConn())
+                        .p95LatencyMs(nodeMetrics.getP95LatencyMs())
+                        .kafkaTopicLagLatencyMs(nodeMetrics.getKafkaTopicLagLatencyMs())
+                        .timestampMs(timestampMs)
+                        .build();
 
-        // Update registry
-        nodeRegistry.put(nodeId, new NodeEntry(descriptor, Instant.now(), heartbeat));
+                    return new NodeEntry(nodeId, nodeEntry == null ? 100 : nodeEntry.weight, heartbeat);
+                }).collect(Collectors.toList())
+            )
+//            .doOnNext(newNodeEntries -> removedNodes.forEach(nodeRegistry::remove))
+            .doOnNext(newNodeEntries -> {
+                int numbOfNodes = newNodeEntries.size();
+                if (noTopolyUpdates) {
+                    double cpu = newNodeEntries.stream().mapToDouble(node -> node.lastHeartbeat.getCpu()).sum();
+                    double mem = newNodeEntries.stream().mapToDouble(node -> node.lastHeartbeat.getMem()).sum();
 
-        if (isNew) {
-            log.info("New node joined: {}", nodeId);
-            recomputeRing("node-joined: " + nodeId);
-            return;
-        }
+                    double cpuLoad = cpu / numbOfNodes;
+                    double memLoad = mem / numbOfNodes;
 
-        // Check if weight changed (significant)
-        if (existing != null && existing.descriptor.getWeight() != descriptor.getWeight()) {
-            log.info("Node weight changed: {} ({} -> {})",
-                nodeId, existing.descriptor.getWeight(), descriptor.getWeight());
-            recomputeRing("weight-changed: " + nodeId);
-        }
+                    if (cpuLoad >= 0.7 || memLoad >= 0.75) {
+                        //scale in
+                    } else {
+
+
+
+                    }
+
+                    if (cpuLoad < 0.3 && memLoad > 0.3) {
+
+                    }
+
+                } else {
+
+                }
+            }).subscribe();
+
+//        String nodeId = heartbeat.getNodeId();
+//
+//        NodeEntry existing = nodeRegistry.get(nodeId);
+//        boolean isNew = (existing == null);
+//
+//        // Update registry
+//        nodeRegistry.put(nodeId, new NodeEntry(descriptor, Instant.now(), heartbeat));
+//
+//        if (isNew) {
+//            log.info("New node joined: {}", nodeId);
+//            recomputeRing("node-joined: " + nodeId);
+//            return;
+//        }
+//
+//        // Check if weight changed (significant)
+//        if (existing != null && existing.descriptor.getWeight() != descriptor.getWeight()) {
+//            log.info("Node weight changed: {} ({} -> {})",
+//                nodeId, existing.descriptor.getWeight(), descriptor.getWeight());
+//            recomputeRing("weight-changed: " + nodeId);
+//        }
 
     }
 
@@ -121,40 +172,6 @@ public class LoadBalancer implements ILoadBalancer {
             log.error("Failed to select node for userId {}: {}", userId, e.getMessage());
             return null;
         }
-    }
-
-    /**
-     * Gets the current ring snapshot.
-     *
-     * @return RingSnapshot
-     */
-    public RingSnapshot getRingSnapshot() {
-        // Build snapshot from current ring state
-        List<String> nodeNames = currentHash.getNodeNames();
-        Map<String, Integer> weights = currentHash.getWeights();
-
-        // Create vnodes representation for compatibility
-        // SkeletonWeightedRendezvousHash doesn't use vnodes, so we create a logical representation
-        List<RingSnapshot.VNode> vnodes = new ArrayList<>();
-        for (String nodeName : nodeNames) {
-            Integer weight = weights.get(nodeName);
-            if (weight != null) {
-                // Create virtual nodes based on weight
-                int vnodeCount = weight * config.getRingVnodesPerWeight();
-                for (int i = 0; i < vnodeCount; i++) {
-                    String vnodeKey = nodeName + "#" + i;
-                    long hash = Hashers.murmur3Hash(vnodeKey.getBytes(StandardCharsets.UTF_8));
-                    vnodes.add(new RingSnapshot.VNode(hash, nodeName));
-                }
-            }
-        }
-
-        return RingSnapshot.builder()
-            .vnodes(vnodes)
-            .hashSpaceSize(Long.MAX_VALUE)
-            .vnodesPerWeightUnit(config.getRingVnodesPerWeight())
-            .version(currentVersion)
-            .build();
     }
 
     /**
@@ -198,7 +215,6 @@ public class LoadBalancer implements ILoadBalancer {
         // Publish to Kafka
         ControlMessages.RingUpdate ringUpdate = ControlMessages.RingUpdate.builder()
             .version(version)
-            .ring(getRingSnapshot())
             .reason(reason)
             .ts(System.currentTimeMillis())
             .build();
@@ -221,7 +237,7 @@ public class LoadBalancer implements ILoadBalancer {
     private void cleanupStaleNodes() {
         Instant now = Instant.now();
         List<String> staleNodes = nodeRegistry.entrySet().stream()
-            .filter(e -> e.getValue().lastSeen.plus(config.getHeartbeatGrace()).isBefore(now))
+            .filter(e -> Instant.ofEpochMilli(e.getValue().lastHeartbeat.getTimestampMs()).plus(config.getHeartbeatGrace()).isBefore(now))
             .map(Map.Entry::getKey)
             .collect(Collectors.toList());
 
@@ -249,9 +265,7 @@ public class LoadBalancer implements ILoadBalancer {
      * Node entry with descriptor and last-seen timestamp.
      */
     public record NodeEntry(String nodeId,
-                            String publicWsUrl,
                             int weight,
-                            Instant lastSeen,
                             Heartbeat lastHeartbeat) {
     }
 }

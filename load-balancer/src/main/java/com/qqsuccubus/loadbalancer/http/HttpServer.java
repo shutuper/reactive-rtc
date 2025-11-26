@@ -2,15 +2,14 @@ package com.qqsuccubus.loadbalancer.http;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
-import com.qqsuccubus.core.model.RingSnapshot;
 import com.qqsuccubus.loadbalancer.config.LBConfig;
 import com.qqsuccubus.loadbalancer.metrics.NodeMetricsService;
 import com.qqsuccubus.loadbalancer.metrics.PrometheusMetricsExporter;
 import com.qqsuccubus.loadbalancer.metrics.PrometheusQueryService;
 import com.qqsuccubus.loadbalancer.ring.ILoadBalancer;
 import com.qqsuccubus.loadbalancer.ring.LoadBalancer;
-import com.qqsuccubus.loadbalancer.scale.ScalingEngine;
 import io.netty.handler.codec.http.HttpResponseStatus;
+import lombok.Getter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Mono;
@@ -30,9 +29,9 @@ public class HttpServer {
 
     private final LBConfig config;
     private final ILoadBalancer ringManager;
-    private final ScalingEngine scalingEngine;
     private final PrometheusMetricsExporter metricsExporter;
     private final PrometheusQueryService prometheusQueryService;
+    @Getter
     private final NodeMetricsService nodeMetricsService;
 
     private DisposableServer server;
@@ -40,18 +39,15 @@ public class HttpServer {
     public HttpServer(
         LBConfig config,
         ILoadBalancer ringManager,
-        ScalingEngine scalingEngine,
-        PrometheusMetricsExporter metricsExporter
+        PrometheusMetricsExporter metricsExporter,
+        PrometheusQueryService prometheusQueryService,
+        NodeMetricsService nodeMetricsService
     ) {
         this.config = config;
         this.ringManager = ringManager;
-        this.scalingEngine = scalingEngine;
         this.metricsExporter = metricsExporter;
-        this.prometheusQueryService = new PrometheusQueryService(
-            config.getPrometheusHost(),
-            config.getPrometheusPort()
-        );
-        this.nodeMetricsService = new NodeMetricsService(this.prometheusQueryService);
+        this.prometheusQueryService = prometheusQueryService;
+        this.nodeMetricsService = nodeMetricsService;
     }
 
     /**
@@ -84,19 +80,6 @@ public class HttpServer {
                     .sendString(Mono.just(metricsExporter.scrape()))
                     .then()
             )
-            // Get ring snapshot
-            .get("/api/v1/ring", (req, res) ->
-                Mono.fromCallable(() -> {
-                    RingSnapshot snapshot = ringManager.getRingSnapshot();
-                    return MAPPER.writeValueAsString(snapshot);
-                }).flatMap(json ->
-                    res.header("Content-Type", "application/json")
-                        .sendString(Mono.just(json)).then()
-                ).onErrorResume(err ->
-                    res.status(HttpResponseStatus.INTERNAL_SERVER_ERROR)
-                        .sendString(Mono.just("{\"error\":\"Failed to serialize ring\"}")).then()
-                ).then(res.send())
-            )
             // Resolve node for userId
             .get("/api/v1/resolve", (req, res) -> {
                 String userId = req.param("userId");
@@ -114,8 +97,6 @@ public class HttpServer {
                 return Mono.fromCallable(() -> {
                     Map<String, Object> response = new HashMap<>();
                     response.put("nodeId", node.nodeId());
-                    response.put("publicWsUrl", node.publicWsUrl());
-                    response.put("version", ringManager.getRingSnapshot().getVersion().getVersion());
                     return MAPPER.writeValueAsString(response);
                 }).flatMap(json ->
                     res.header("Content-Type", "application/json")
@@ -141,8 +122,6 @@ public class HttpServer {
 
                 return Mono.fromCallable(() -> {
                     Map<String, Object> response = new HashMap<>();
-                    response.put("wsUrl", node.publicWsUrl() + "?userId=" + userId);
-                    response.put("ringVersion", ringManager.getRingSnapshot().getVersion().getVersion());
                     return MAPPER.writeValueAsString(response);
                 }).flatMap(json ->
                     res.header("Content-Type", "application/json")

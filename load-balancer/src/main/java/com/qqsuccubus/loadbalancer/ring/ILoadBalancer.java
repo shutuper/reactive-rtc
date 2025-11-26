@@ -1,7 +1,5 @@
 package com.qqsuccubus.loadbalancer.ring;
 
-import com.qqsuccubus.core.model.RingSnapshot;
-
 import java.util.Map;
 
 /**
@@ -16,11 +14,6 @@ public interface ILoadBalancer {
      * Resolves a userId to a node.
      */
     LoadBalancer.NodeEntry resolveNode(String userId);
-
-    /**
-     * Gets the current ring snapshot.
-     */
-    RingSnapshot getRingSnapshot();
 
     /**
      * Gets all active nodes.
