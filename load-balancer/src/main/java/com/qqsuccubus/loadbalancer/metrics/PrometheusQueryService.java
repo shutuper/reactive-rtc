@@ -57,7 +57,7 @@ public class PrometheusQueryService {
 
         String uri = "/api/v1/query?query=" + encodedQuery;
 
-        log.debug("Executing Prometheus query: {}", query);
+        log.info("Executing Prometheus query: {}", query);
 
         return httpClient.get()
                 .uri(uri)
@@ -74,7 +74,7 @@ public class PrometheusQueryService {
                             return Mono.just(PrometheusQueryResult.empty());
                         }
 
-                        log.debug("Prometheus query successful, result count: {}",
+                        log.info("Prometheus query successful, result count: {}",
                                 response.getData() != null && response.getData().getResult() != null
                                         ? response.getData().getResult().size() : 0);
 
@@ -97,7 +97,7 @@ public class PrometheusQueryService {
         String query = "sum(rate(rtc_socket_deliver_mps_total[1m]))";
         return query(query)
                 .map(result -> result.getValue().orElse(0.0))
-                .doOnNext(value -> log.debug("Total throughput: {} msg/s", value));
+                .doOnNext(value -> log.info("Total throughput: {} msg/s", value));
     }
 
     /**
@@ -109,7 +109,7 @@ public class PrometheusQueryService {
         String query = "sum by (node_id) (rate(rtc_socket_deliver_mps_total[1m]))";
         return query(query)
                 .map(result -> result.getValuesByLabel("node_id"))
-                .doOnNext(values -> log.debug("Throughput by node: {}", values));
+                .doOnNext(values -> log.info("Throughput by node: {}", values));
     }
 
     /**
@@ -121,7 +121,7 @@ public class PrometheusQueryService {
         String query = "histogram_quantile(0.95, sum(rate(rtc_socket_latency_seconds_bucket[5m])) by (le))";
         return query(query)
                 .map(result -> result.getValue().orElse(0.0))
-                .doOnNext(value -> log.debug("p95 latency: {}s ({}ms)", value, value * 1000));
+                .doOnNext(value -> log.info("p95 latency: {}s ({}ms)", value, value * 1000));
     }
 
     /**
@@ -130,10 +130,10 @@ public class PrometheusQueryService {
      * @return Mono<Map<String, Double>> map of nodeId -> p95 latency in seconds
      */
     public Mono<Map<String, Double>> getP95LatencyByNode() {
-        String query = "histogram_quantile(0.95, sum by (node_id, le) (rate(rtc_socket_latency_seconds_bucket[5m])))";
+        String query = "histogram_quantile(0.95, sum by (node_id, le) (rate(rtc_socket_latency_seconds_bucket[3m])))";
         return query(query)
                 .map(result -> result.getValuesByLabel("node_id"))
-                .doOnNext(values -> log.debug("p95 latency by node: {}", values));
+                .doOnNext(values -> log.info("p95 latency by node: {}", values));
     }
 
     /**
@@ -142,22 +142,26 @@ public class PrometheusQueryService {
      * @return Mono<Double> total active connections
      */
     public Mono<Double> getTotalActiveConnections() {
-        String query = "sum(rtc_socket_active_connections)";
+        // Filter by websocket-server and aggregate by node to avoid double-counting
+        String query = "sum(max by (node_id) (reactor_netty_http_server_connections_active{job=\"socket-nodes\",component=\"websocket-server\"}))";
         return query(query)
                 .map(result -> result.getValue().orElse(0.0))
-                .doOnNext(value -> log.debug("Total connections: {}", value));
+                .doOnNext(value -> log.info("Total connections: {}", value));
     }
 
     /**
      * Gets active connections per node.
+     * Filters for websocket-server component to get actual client connections.
      *
      * @return Mono<Map<String, Double>> map of nodeId -> connection count
      */
     public Mono<Map<String, Double>> getActiveConnectionsByNode() {
-        String query = "rtc_socket_active_connections";
+        // Filter by websocket-server component to get only client WebSocket connections
+        // Use max to handle multiple server instances per node
+        String query = "max by (node_id) (reactor_netty_http_server_connections_active{job=\"socket-nodes\",component=\"websocket-server\"})";
         return query(query)
                 .map(result -> result.getValuesByLabel("node_id"))
-                .doOnNext(values -> log.debug("Connections by node: {}", values));
+                .doOnNext(values -> log.info("Connections by node: {}", values));
     }
 
     /**
@@ -169,7 +173,7 @@ public class PrometheusQueryService {
         String query = "sum(kafka_consumergroup_lag_sum{consumergroup=~\"socket-delivery-.*\"})";
         return query(query)
                 .map(result -> result.getValue().orElse(0.0))
-                .doOnNext(value -> log.debug("Total Kafka lag: {} messages", value));
+                .doOnNext(value -> log.info("Total Kafka lag: {} messages", value));
     }
 
     /**
@@ -181,7 +185,7 @@ public class PrometheusQueryService {
         String query = "kafka_consumergroup_lag_sum{consumergroup=~\"socket-delivery-.*\"}";
         return query(query)
                 .map(result -> result.getValuesByLabel("consumergroup"))
-                .doOnNext(values -> log.debug("Kafka lag by consumer group: {}", values));
+                .doOnNext(values -> log.info("Kafka lag by consumer group: {}", values));
     }
 
     /**
@@ -193,7 +197,7 @@ public class PrometheusQueryService {
         String query = "count(up{job=\"socket-nodes\"} == 1)";
         return query(query)
                 .map(result -> result.getValue().orElse(0.0))
-                .doOnNext(value -> log.debug("Socket node count: {}", value));
+                .doOnNext(value -> log.info("Socket node count: {}", value));
     }
 
     /**
@@ -240,7 +244,7 @@ public class PrometheusQueryService {
                 .timeout(Duration.ofSeconds(3))
                 .doOnNext(healthy -> {
                     if (healthy) {
-                        log.debug("Prometheus health check: OK");
+                        log.info("Prometheus health check: OK");
                     } else {
                         log.warn("Prometheus health check: FAILED");
                     }

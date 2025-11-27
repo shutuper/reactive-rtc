@@ -1,5 +1,7 @@
 package com.qqsuccubus.core.msg;
 
+import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import com.qqsuccubus.core.model.DistributionVersion;
 import lombok.Builder;
 import lombok.Value;
@@ -29,23 +31,40 @@ public final class ControlMessages {
         /**
          * New distribution version.
          */
+        @JsonProperty("version")
         DistributionVersion version;
 
         /**
          * Node weights for consistent hashing.
          * Map of nodeId -> weight (integer, typically 1-500, sum should be 100 * numNodes)
          */
+        @JsonProperty("nodeWeights")
         Map<String, Integer> nodeWeights;
 
         /**
          * Human-readable reason for this update (e.g., "node-3 joined").
          */
+        @JsonProperty("reason")
         String reason;
 
         /**
          * Timestamp when this update was issued (epoch millis).
          */
+        @JsonProperty("ts")
         long ts;
+
+        @JsonCreator
+        public RingUpdate(
+            @JsonProperty("version") DistributionVersion version,
+            @JsonProperty("nodeWeights") Map<String, Integer> nodeWeights,
+            @JsonProperty("reason") String reason,
+            @JsonProperty("ts") long ts
+        ) {
+            this.version = version;
+            this.nodeWeights = nodeWeights;
+            this.reason = reason;
+            this.ts = ts;
+        }
     }
 
     /**
@@ -67,28 +86,48 @@ public final class ControlMessages {
         /**
          * Target node ID to drain.
          */
+        @JsonProperty("nodeId")
         String nodeId;
 
         /**
          * Deadline by which the node should complete draining (epoch millis).
          */
+        @JsonProperty("deadline")
         long deadline;
 
         /**
          * Maximum number of connections to disconnect (for load redistribution).
          * If 0 or negative, all connections should drain.
          */
+        @JsonProperty("maxDisconnects")
         int maxDisconnects;
 
         /**
          * Reason for drain (e.g., "scale-in", "rolling-update", "load-redistribution").
          */
+        @JsonProperty("reason")
         String reason;
 
         /**
          * Timestamp when this signal was issued (epoch millis).
          */
+        @JsonProperty("ts")
         long ts;
+
+        @JsonCreator
+        public DrainSignal(
+            @JsonProperty("nodeId") String nodeId,
+            @JsonProperty("deadline") long deadline,
+            @JsonProperty("maxDisconnects") int maxDisconnects,
+            @JsonProperty("reason") String reason,
+            @JsonProperty("ts") long ts
+        ) {
+            this.nodeId = nodeId;
+            this.deadline = deadline;
+            this.maxDisconnects = maxDisconnects;
+            this.reason = reason;
+            this.ts = ts;
+        }
     }
 
     /**
@@ -103,12 +142,23 @@ public final class ControlMessages {
         /**
          * Reason for this scaling decision.
          */
+        @JsonProperty("reason")
         String reason;
 
         /**
          * Timestamp when this signal was issued (epoch millis).
          */
+        @JsonProperty("ts")
         long ts;
+
+        @JsonCreator
+        public ScaleSignal(
+            @JsonProperty("reason") String reason,
+            @JsonProperty("ts") long ts
+        ) {
+            this.reason = reason;
+            this.ts = ts;
+        }
     }
 }
 

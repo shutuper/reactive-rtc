@@ -197,7 +197,7 @@ public class WebSocketHandler {
 						return Mono.empty();
 					}
 					log.info("Message to {} not delivered locally, resolving target node", envelope.getToClientId());
-					return kafkaService.publishRelay(config.getNodeId(), envelope)
+					return kafkaService.publishRelay(null, envelope)
 							.doOnSuccess(v -> {
 								// Record latency for relay delivery (includes Kafka publish time)
 								metricsService.recordLatencyMs(envelope.getTs());

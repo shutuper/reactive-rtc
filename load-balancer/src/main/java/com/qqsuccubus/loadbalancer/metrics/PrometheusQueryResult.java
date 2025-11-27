@@ -95,7 +95,7 @@ public class PrometheusQueryResult {
             try {
                 // Get label value
                 if (result.getMetric() == null || !result.getMetric().containsKey(labelName)) {
-                    log.debug("Result missing label '{}': {}", labelName, result.getMetric());
+                    log.info("Result missing label '{}': {}", labelName, result.getMetric());
                     continue;
                 }
                 String labelValue = result.getMetric().get(labelName);

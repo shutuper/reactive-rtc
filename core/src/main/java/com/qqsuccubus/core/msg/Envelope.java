@@ -60,7 +60,6 @@ public class Envelope {
     @Builder.Default
     long ts = System.currentTimeMillis();
 
-    String nodeId;
 }
 
 

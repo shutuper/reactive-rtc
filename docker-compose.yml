@@ -3,6 +3,7 @@ services:
   zookeeper:
     image: confluentinc/cp-zookeeper:7.5.0
     container_name: zookeeper
+    user: root
     environment:
       ZOOKEEPER_CLIENT_PORT: 2181
       ZOOKEEPER_TICK_TIME: 2000
@@ -10,6 +11,9 @@ services:
       ZOOKEEPER_INIT_LIMIT: 10
     ports:
       - "2181:2181"
+    volumes:
+      - zookeeper-data:/var/lib/zookeeper/data
+      - zookeeper-log:/var/lib/zookeeper/log
     healthcheck:
       test: ["CMD", "nc", "-z", "localhost", "2181"]
       interval: 10s
@@ -20,6 +24,7 @@ services:
   kafka:
     image: confluentinc/cp-kafka:7.5.0
     container_name: kafka
+    user: root
     depends_on:
       zookeeper:
         condition: service_healthy
@@ -36,6 +41,8 @@ services:
     ports:
       - "29092:29092"
       - "9092:9092"
+    volumes:
+      - kafka-data:/var/lib/kafka/data
     healthcheck:
       test: ["CMD", "kafka-broker-api-versions", "--bootstrap-server", "localhost:9092"]
       interval: 10s
@@ -48,7 +55,9 @@ services:
     container_name: redis
     ports:
       - "6379:6379"
-    command: redis-server --appendonly yes
+    volumes:
+      - redis-data:/data
+    command: redis-server --save 60 1000 --loglevel warning
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
@@ -64,9 +73,12 @@ services:
     depends_on:
       kafka:
         condition: service_healthy
+      redis:
+        condition: service_healthy
     environment:
       HTTP_PORT: 8081
       KAFKA_BOOTSTRAP: kafka:9092
+      REDIS_URL: redis://redis:6379
       PUBLIC_DOMAIN_TEMPLATE: "ws://localhost:%d/ws"
       RING_SECRET: "my-secret-key-for-demo"
       RING_VNODES_PER_WEIGHT: 150
@@ -139,6 +151,12 @@ services:
       LOAD_BALANCER_URL: http://load-balancer:8081
     ports:
       - "8082:8082"
+
+volumes:
+  zookeeper-data:
+  zookeeper-log:
+  kafka-data:
+  redis-data:
 
 networks:
   default:

@@ -55,7 +55,7 @@ public class RingService {
             version.getVersion(), nodeWeights.size(), nodeWeights, ringUpdate.getReason());
 
         if (oldState.version != null) {
-            log.debug("Previous ring version: {}", oldState.version.getVersion());
+            log.info("Previous ring version: {}", oldState.version.getVersion());
         }
     }
 
@@ -83,7 +83,7 @@ public class RingService {
 
         try {
             String targetNode = state.hash.selectNode(clientId);
-            log.debug("Resolved client {} to node {}", clientId, targetNode);
+            log.info("Resolved client {} to node {}", clientId, targetNode);
             return targetNode;
         } catch (IllegalStateException e) {
             log.error("Failed to resolve node for client {}: {}", clientId, e.getMessage());

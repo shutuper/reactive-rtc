@@ -1,6 +1,8 @@
 package com.qqsuccubus.socket.redis;
 
+import com.qqsuccubus.core.msg.ControlMessages;
 import com.qqsuccubus.core.redis.Keys;
+import com.qqsuccubus.core.util.JsonUtils;
 import com.qqsuccubus.socket.config.SocketConfig;
 import io.lettuce.core.*;
 import io.lettuce.core.api.StatefulRedisConnection;
@@ -14,6 +16,7 @@ import reactor.core.publisher.Mono;
 import java.time.Duration;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.function.Function;
 
 /**
  * Reactive Redis service for session management and message buffering.
@@ -184,6 +187,13 @@ public class RedisService implements IRedisService {
         connection.close();
         client.shutdown();
         log.info("Redis connection closed");
+    }
+
+    @Override
+    public Mono<ControlMessages.RingUpdate> getCurrentRingVersion() {
+        return commands.get(Keys.ringVersion())
+            .mapNotNull(Function.identity())
+            .map(update -> JsonUtils.readValue(update, ControlMessages.RingUpdate.class));
     }
 }
 

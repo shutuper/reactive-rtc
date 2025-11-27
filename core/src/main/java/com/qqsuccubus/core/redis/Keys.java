@@ -41,6 +41,10 @@ public final class Keys {
         return "heartbeats";
     }
 
+    public static String ringVersion() {
+        return "ring-version";
+    }
+
     /**
      * Message buffer key for a user: {@code buf:{clientId}}
      * <p>

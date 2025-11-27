@@ -1,5 +1,6 @@
 package com.qqsuccubus.socket.redis;
 
+import com.qqsuccubus.core.msg.ControlMessages;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
@@ -41,6 +42,8 @@ public interface IRedisService {
      * Closes Redis connection.
      */
     void close();
+
+    Mono<ControlMessages.RingUpdate> getCurrentRingVersion();
 }
 
 

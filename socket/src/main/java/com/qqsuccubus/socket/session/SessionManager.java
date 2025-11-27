@@ -77,7 +77,12 @@ public class SessionManager implements ISessionManager {
 				.thenReturn(session);
 	}
 
-	@Override
+    @Override
+    public Mono<String> getClientTargetNodeId(String clientId) {
+        return redisService.getSession(clientId).mapNotNull(session -> session.get("nodeId"));
+    }
+
+    @Override
 	public Mono<Void> removeSession(String clientId) {
 		Session session = activeSessions.remove(clientId);
 		if (session == null) {
@@ -105,7 +110,7 @@ public class SessionManager implements ISessionManager {
             metricsService.recordDeliverLocal();
 			String clientId = envelope.getToClientId();
 
-			log.debug("Checking activeSessions map: total size={}, contains key '{}'={}",
+			log.info("Checking activeSessions map: total size={}, contains key '{}'={}",
 					activeSessions.size(), clientId, activeSessions.containsKey(clientId));
 
 			Session session = activeSessions.get(clientId);
@@ -148,7 +153,7 @@ public class SessionManager implements ISessionManager {
 					// Messages from buffer need offsets assigned for client tracking
 					if (envelope.getOffset() < 0) {
 						// Will be set when emitted through outbound flux
-						log.debug("Buffered message {} for client {} will get offset assigned",
+						log.info("Buffered message {} for client {} will get offset assigned",
 								envelope.getMsgId(), clientId);
 					}
 				});

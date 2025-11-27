@@ -12,6 +12,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.slf4j.MDC;
 import reactor.core.Disposable;
+import reactor.netty.DisposableServer;
 
 import java.time.Duration;
 
@@ -42,6 +43,8 @@ public class SocketApp {
         // Initialize ring service for consistent hashing
         RingService ringService = new RingService();
 
+        redisService.getCurrentRingVersion().doOnNext(ringService::updateRing).block();
+
         KafkaService kafkaService = new KafkaService(
             config, sessionManager, metricsService, sessionManager.getBufferService(), ringService
         );
@@ -58,24 +61,14 @@ public class SocketApp {
             metricsExporter
         );
 
-        httpServer.start()
-            .doOnNext(port -> log.info("HTTP server started on port {}", port))
-            .doOnError(err -> log.error("Failed to start HTTP server", err))
-            .block();
+        DisposableServer disposableServer = httpServer.start();
 
         Disposable heartbeats = redisService.startHeartbeats();
-
         log.info("Socket node {} is ready", config.getNodeId());
 
         handleShutdown(config, sessionManager, kafkaService, httpServer, redisService, heartbeats);
 
-        // Keep the application running until shutdown signal
-        try {
-            Thread.currentThread().join();
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            log.warn("Main thread interrupted");
-        }
+        disposableServer.onDispose().block();
     }
 
     private static void handleShutdown(SocketConfig config,

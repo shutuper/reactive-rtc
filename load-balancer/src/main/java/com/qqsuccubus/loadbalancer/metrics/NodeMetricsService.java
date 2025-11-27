@@ -56,13 +56,13 @@ public class NodeMetricsService {
 
     /**
      * Gets Kafka delivery topic lag latency per node (milliseconds).
-     * This is the last value (max), showing current lag from message timestamp to consumption.
+     * This is the average over the last 1 minute, showing recent lag from message timestamp to consumption.
      */
     private Mono<Map<String, Double>> getKafkaTopicLagLatencyByNode() {
-        String query = "rtc_kafka_delivery_topic_lag_latency_seconds_max{job=\"socket-nodes\"} * 1000";
+        String query = "avg_over_time(rtc_kafka_delivery_topic_lag_latency_seconds_max{job=\"socket-nodes\"}[1m]) * 1000";
         return queryService.query(query)
                 .map(r -> r.getValuesByLabel("node_id"))
-                .doOnNext(values -> log.debug("Kafka topic lag latency by node: {}", values));
+                .doOnNext(values -> log.info("Kafka topic lag latency by node: {}", values));
     }
 
     /**
@@ -126,7 +126,7 @@ public class NodeMetricsService {
                         .build();
 
                 result.put(nodeId, metrics);
-                log.debug("Built metrics for node {}: {}", nodeId, metrics);
+                log.info("Built metrics for node {}: {}", nodeId, metrics);
             }
 
             log.info("Retrieved comprehensive metrics for {} nodes", result.size());

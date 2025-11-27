@@ -8,6 +8,8 @@ import com.qqsuccubus.socket.session.ISessionManager;
 import com.qqsuccubus.socket.ws.WebSocketUpgradeHandler;
 import io.netty.channel.ChannelOption;
 import lombok.RequiredArgsConstructor;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Mono;
 import reactor.netty.DisposableServer;
 
@@ -19,6 +21,7 @@ import java.util.function.Function;
  */
 @RequiredArgsConstructor
 public class HttpServer {
+    private static final Logger log = LoggerFactory.getLogger(HttpServer.class);
 
     private final SocketConfig config;
     private final ISessionManager sessionManager;
@@ -30,9 +33,8 @@ public class HttpServer {
     /**
      * Starts the HTTP server.
      *
-     * @return Mono<Integer> of the bound port
      */
-    public Mono<Integer> start() {
+    public DisposableServer start() {
         // Create upgrade handler for proper param extraction
         WebSocketUpgradeHandler upgradeHandler = new WebSocketUpgradeHandler(
             config, sessionManager, kafkaService, metricsService
@@ -53,9 +55,12 @@ public class HttpServer {
                 // WebSocket upgrade endpoint with param extraction
                 .get("/ws", upgradeHandler::handle)
             )
-            .bindNow();
+            .bind()
+            .doOnNext(port -> log.info("HTTP server started on port {}", port))
+            .doOnError(err -> log.error("Failed to start HTTP server", err))
+            .block(Duration.ofSeconds(45));
 
-        return Mono.just(server.port());
+        return server;
     }
 
     public void stop() {

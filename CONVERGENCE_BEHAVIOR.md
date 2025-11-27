@@ -74,7 +74,7 @@ private boolean shouldRecalculateWeights(...) {
     
     // NEW: Check convergence first
     if (isSystemConverged(entries)) {
-        log.debug("System converged - skipping unnecessary recalculation");
+        log.info("System converged - skipping unnecessary recalculation");
         return false; // SKIP recalculation
     }
     

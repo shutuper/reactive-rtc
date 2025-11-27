@@ -8,6 +8,7 @@ import com.qqsuccubus.loadbalancer.metrics.PrometheusQueryService;
 import com.qqsuccubus.loadbalancer.ring.ILoadBalancer;
 import com.qqsuccubus.loadbalancer.ring.LoadBalancer;
 import io.netty.handler.codec.http.HttpResponseStatus;
+import io.netty.handler.codec.http.QueryStringDecoder;
 import lombok.Getter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -53,13 +54,16 @@ public class HttpServer {
      *
      * @return Mono<Integer> of the bound port
      */
-    public Mono<Integer> start() {
+    public DisposableServer start() {
         server = reactor.netty.http.server.HttpServer.create()
             .port(config.getHttpPort())
             .route(this::configureRoutes)
-            .bindNow();
+            .bind()
+            .doOnNext(port -> log.info("HTTP server started on port {}", port))
+            .doOnError(err -> log.error("Failed to start HTTP server", err))
+            .block(Duration.ofSeconds(45));
 
-        return Mono.just(server.port());
+        return server;
     }
 
     public void stop() {
@@ -80,10 +84,14 @@ public class HttpServer {
             )
             // Resolve node for userId
             .get("/api/v1/resolve", (req, res) -> {
-                String userId = req.param("userId");
+                QueryStringDecoder decoder = new QueryStringDecoder(req.uri());
+                String userId = decoder.parameters().containsKey("clientId") 
+                    ? decoder.parameters().get("clientId").get(0) 
+                    : null;
+                    
                 if (userId == null || userId.isEmpty()) {
                     return res.status(HttpResponseStatus.BAD_REQUEST)
-                        .sendString(Mono.just("{\"error\":\"Missing userId parameter\"}"));
+                        .sendString(Mono.just("{\"error\":\"Missing clientId parameter\"}"));
                 }
 
                 LoadBalancer.NodeEntry node = ringManager.resolveNode(userId);
@@ -106,7 +114,11 @@ public class HttpServer {
             })
             // Connect endpoint
             .get("/api/v1/connect", (req, res) -> {
-                String userId = req.param("userId");
+                QueryStringDecoder decoder = new QueryStringDecoder(req.uri());
+                String userId = decoder.parameters().containsKey("userId") 
+                    ? decoder.parameters().get("userId").get(0) 
+                    : null;
+                    
                 if (userId == null || userId.isEmpty()) {
                     return res.status(HttpResponseStatus.BAD_REQUEST)
                         .sendString(Mono.just("{\"error\":\"Missing userId parameter\"}"));

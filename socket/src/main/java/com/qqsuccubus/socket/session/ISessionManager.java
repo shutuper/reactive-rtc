@@ -20,6 +20,8 @@ public interface ISessionManager {
      */
     Mono<Session> createSession(String clientId, int resumeOffset);
 
+    Mono<String> getClientTargetNodeId(String clientId);
+
     /**
      * Removes a session for a user.
      *

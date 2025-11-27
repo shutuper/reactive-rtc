@@ -29,6 +29,7 @@ import reactor.kafka.sender.KafkaSender;
 import reactor.kafka.sender.SenderOptions;
 import reactor.kafka.sender.SenderRecord;
 
+import javax.annotation.Nullable;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
@@ -201,9 +202,9 @@ public class KafkaService implements IKafkaService {
                     Envelope envelope = JsonUtils.readValue(messageValue, Envelope.class);
                     metricsService.recordKafkaDeliveryTopicLatency(envelope.getTs());
                     log.info(
-                        "Kafka message received for node {}: from={}, to={}, msgId={}, envelope.nodeId={}",
+                        "Kafka message received for node {}: from={}, to={}, msgId={}",
                         currentNodeId, envelope.getFrom(), envelope.getToClientId(),
-                        envelope.getMsgId(), envelope.getNodeId()
+                        envelope.getMsgId()
                     );
 
                     // Try to deliver the message to the connected client
@@ -223,15 +224,25 @@ public class KafkaService implements IKafkaService {
                             } else {
                                 // Client not connected on this node, buffer in Redis for later resume
                                 log.info(
-                                    "Client {} not connected on node {}, buffering message in Redis",
+                                    "Client {} not connected on node {}, check via Redis/buffering message in Redis",
                                     envelope.getToClientId(), currentNodeId
                                 );
 
-                                return bufferService.bufferMessage(envelope)
-                                    .doOnSuccess(v -> {
+                                return sessionManager.getClientTargetNodeId(
+                                        envelope.getToClientId()
+                                    ).flatMap(targetNodeId -> publishRelay(targetNodeId, envelope)
+                                        //todo add control to read messages from buffer on another node + write it there
+                                        .doOnSuccess(v -> {
+                                            log.info(
+                                                "Two-hop relay message sent to client: {}", envelope.getToClientId()
+                                            );
+                                            record.receiverOffset().acknowledge();
+                                        }).then(Mono.empty())
+                                    ).switchIfEmpty(bufferService.bufferMessage(envelope).doOnSuccess(v -> {
                                         log.info("Message buffered in Redis for client: {}", envelope.getToClientId());
                                         record.receiverOffset().acknowledge();
-                                    });
+                                    }))
+                                    .then();
                             }
                         })
                         .onErrorResume(error -> {
@@ -275,34 +286,28 @@ public class KafkaService implements IKafkaService {
      * </p>
      * <p>
      * Target node resolution order:
-     * 1. envelope.nodeId (from Redis session)
-     * 2. targetNodeIdHint (local hint)
-     * 3. Consistent hash based on recipient clientId
+     * 1. targetNodeId (local hint)
+     * 2. Consistent hash based on recipient clientId
      * </p>
      *
-     * @param targetNodeIdHint Target node identifier hint (can be null)
-     * @param envelope         Message envelope
+     * @param envelope Message envelope
      * @return Mono completing when published
      */
-    public Mono<Void> publishRelay(String targetNodeIdHint, Envelope envelope) {
+    public Mono<Void> publishRelay(@Nullable String targetNodeId, Envelope envelope) {
         if (envelope == null) {
             log.error("Attempted to relay null envelope");
             return Mono.error(new IllegalArgumentException("Envelope cannot be null"));
         }
 
         // Try to resolve target node: 1) Redis session 2) hint 3) consistent hash
-        return Mono.justOrEmpty(envelope.getNodeId())
-            .switchIfEmpty(Mono.justOrEmpty(targetNodeIdHint))
-            .switchIfEmpty(Mono.defer(() -> {
+        return Mono.justOrEmpty(targetNodeId).switchIfEmpty(Mono.defer(() -> {
                 // Use consistent hash to determine target node based on recipient
                 String targetFromHash = ringService.resolveTargetNode(envelope.getToClientId());
                 if (targetFromHash == null) {
-                    log.warn("Could not resolve target node for client {} - ring not initialized or empty",
-                        envelope.getToClientId());
+                    log.warn("Could not resolve target node for client {} - ring not initialized or empty", envelope.getToClientId());
                     return Mono.empty();
                 }
-                log.info("Resolved target node {} for client {} using consistent hash",
-                    targetFromHash, envelope.getToClientId());
+                log.info("Resolved target node {} for client {} using consistent hash", targetFromHash, envelope.getToClientId());
                 return Mono.just(targetFromHash);
             }))
             .flatMap(resolvedNodeId -> {

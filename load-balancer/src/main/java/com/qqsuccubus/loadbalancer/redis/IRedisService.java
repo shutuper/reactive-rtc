@@ -1,6 +1,8 @@
 package com.qqsuccubus.loadbalancer.redis;
 
+import com.qqsuccubus.core.msg.ControlMessages;
 import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
 
 import java.util.List;
 
@@ -11,6 +13,8 @@ import java.util.List;
  * </p>
  */
 public interface IRedisService {
+
+    Mono<Void> setCurrentRingVersion(ControlMessages.RingUpdate ringUpdate);
 
     Flux<List<String>> subscribeToHeartbeats();
 

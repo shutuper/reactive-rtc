@@ -1,6 +1,8 @@
 package com.qqsuccubus.loadbalancer.redis;
 
+import com.qqsuccubus.core.msg.ControlMessages;
 import com.qqsuccubus.core.redis.Keys;
+import com.qqsuccubus.core.util.JsonUtils;
 import com.qqsuccubus.loadbalancer.config.LBConfig;
 import io.lettuce.core.KeyValue;
 import io.lettuce.core.RedisClient;
@@ -9,6 +11,7 @@ import io.lettuce.core.api.reactive.RedisReactiveCommands;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
 
 import java.time.Duration;
 import java.util.List;
@@ -32,6 +35,11 @@ public class RedisService implements IRedisService {
         this.connection = client.connect();
         this.commands = connection.reactive();
         log.info("Connected to Redis: {}", config.getRedisUrl());
+    }
+
+    @Override
+    public Mono<Void> setCurrentRingVersion(ControlMessages.RingUpdate ringUpdate) {
+        return commands.set(Keys.ringVersion(), JsonUtils.writeValueAsString(ringUpdate)).then();
     }
 
     public Flux<List<String>> subscribeToHeartbeats() {
