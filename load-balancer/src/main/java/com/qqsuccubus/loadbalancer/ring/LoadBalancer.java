@@ -38,6 +38,24 @@ public class LoadBalancer implements ILoadBalancer {
     private volatile SkeletonWeightedRendezvousHash currentHash;
     private volatile DistributionVersion currentVersion;
 
+    // Last time weights were recalculated (to avoid frequent changes)
+    private volatile long lastWeightRecalculationMs = System.currentTimeMillis();
+
+    // Minimum interval between weight recalculations (10 minutes)
+    private static final long WEIGHT_RECALC_INTERVAL_MS = 10 * 60 * 1000;
+
+    // Target total weight = 100 * number of nodes
+    private static final int WEIGHT_PER_NODE = 100;
+
+    // Exponential scaling tracking
+    private volatile long lastScaleOutTimeMs = 0;
+    private volatile int consecutiveScaleOutCount = 0;
+    private volatile LoadSnapshot lastLoadSnapshot = null;
+
+    // Exponential scaling configuration
+    private static final long SCALE_OUT_WINDOW_MS = 5 * 60 * 1000; // 5 minutes
+    private static final int MAX_SCALE_OUT_COUNT = 5; // Max nodes to add at once
+
     public LoadBalancer(LBConfig config,
                         IRingPublisher kafkaPublisher,
                         MeterRegistry meterRegistry,
@@ -62,7 +80,7 @@ public class LoadBalancer implements ILoadBalancer {
         }
 
         long timestampMs = System.currentTimeMillis();
-        Set<String> prevActiveNodes = nodeRegistry.keySet();
+        Set<String> prevActiveNodes = new HashSet<>(nodeRegistry.keySet());
 
         Set<String> newNodes = activeNodes.stream()
             .filter(node -> !prevActiveNodes.contains(node))
@@ -72,15 +90,19 @@ public class LoadBalancer implements ILoadBalancer {
             .filter(node -> !activeNodes.contains(node))
             .collect(Collectors.toSet());
 
-        boolean noTopolyUpdates = removedNodes.isEmpty() && newNodes.isEmpty();
+        boolean topologyChanged = !removedNodes.isEmpty() || !newNodes.isEmpty();
 
-        return nodeMetricsService.getAllNodeMetrics().map(
-                nodesWithMetrics -> activeNodes.stream().map(nodeId -> {
+        return nodeMetricsService.getAllNodeMetrics()
+            .flatMap(nodesWithMetrics -> {
+                // Build updated node entries with current metrics
+                List<NodeEntry> updatedEntries = activeNodes.stream().map(nodeId -> {
                     NodeMetrics nodeMetrics = nodesWithMetrics.getOrDefault(
-                        nodeId, NodeMetrics.builder().nodeId(nodeId).build()
+                        nodeId, NodeMetrics.builder().nodeId(nodeId).cpu(0.0).mem(0.0).build()
                     );
 
-                    NodeEntry nodeEntry = nodeRegistry.get(nodeId);
+                    NodeEntry existingEntry = nodeRegistry.get(nodeId);
+                    int currentWeight = existingEntry != null ? existingEntry.weight : WEIGHT_PER_NODE;
+
                     Heartbeat heartbeat = Heartbeat.builder()
                         .nodeId(nodeId)
                         .mem(nodeMetrics.getMem())
@@ -92,36 +114,694 @@ public class LoadBalancer implements ILoadBalancer {
                         .timestampMs(timestampMs)
                         .build();
 
-                    return new NodeEntry(nodeId, nodeEntry == null ? 100 : nodeEntry.weight, heartbeat);
-                }).collect(Collectors.toList())
-            )
-//            .doOnNext(newNodeEntries -> removedNodes.forEach(nodeRegistry::remove))
-            .doOnNext(newNodeEntries -> {
-                int numbOfNodes = newNodeEntries.size();
-                //todo finish it
-                if (noTopolyUpdates) {
-                    double cpu = newNodeEntries.stream().mapToDouble(node -> node.lastHeartbeat.getCpu()).sum();
-                    double mem = newNodeEntries.stream().mapToDouble(node -> node.lastHeartbeat.getMem()).sum();
+                    return new NodeEntry(nodeId, currentWeight, heartbeat);
+                }).collect(Collectors.toList());
+                // Decide if we need to recalculate weights
+                boolean shouldRecalculateWeights = shouldRecalculateWeights(
+                    updatedEntries, topologyChanged
+                );
 
-                    double cpuLoad = cpu / numbOfNodes;
-                    double memLoad = mem / numbOfNodes;
+                if (shouldRecalculateWeights) {
+                    log.info("Weight recalculation triggered. Topology changed: {}", topologyChanged);
 
-                    if (cpuLoad >= 0.7 || memLoad >= 0.75) {
-                        //scale in
-                    } else {
+                    // Calculate new weights based on metrics
+                    Map<String, Integer> newWeights = calculateNodeWeights(updatedEntries);
 
+                    // Update node entries with new weights
+                    updatedEntries = updatedEntries.stream().map(entry -> new NodeEntry(
+                            entry.nodeId,
+                            newWeights.get(entry.nodeId),
+                            entry.lastHeartbeat
+                        )).collect(Collectors.toList());
 
-
-                    }
-
-                    if (cpuLoad < 0.3 && memLoad > 0.3) {
-
-                    }
-
-                } else {
-
+                    lastWeightRecalculationMs = timestampMs;
                 }
-            }).thenMany(Flux.empty());
+
+                // Remove stale nodes
+                removedNodes.forEach(nodeRegistry::remove);
+
+                // Update registry with new entries
+                updatedEntries.forEach(entry -> nodeRegistry.put(entry.nodeId, entry));
+
+                // Check if scaling is needed (only when topology is stable)
+                Mono<Void> scalingSignal = Mono.empty();
+                if (!topologyChanged) {
+                    ScalingDecision scalingDecision = shouldScale(updatedEntries, timestampMs);
+                    if (scalingDecision.scaleCount != 0) {
+                        scalingSignal = publishScalingSignal(scalingDecision, updatedEntries);
+                    }
+                }
+
+                if (topologyChanged) {
+                    String reason = buildTopologyChangeReason(newNodes, removedNodes);
+                    log.info("Topology changed: {}", reason);
+                    return Mono.when(recomputeHashBalancer(reason), scalingSignal);
+                } else if (shouldRecalculateWeights) {
+                    return Mono.when(recomputeHashBalancer("weights-rebalanced"), scalingSignal);
+                }
+
+                return scalingSignal;
+            })
+            .flux()
+            .onErrorResume(err -> {
+                log.error("Error processing heartbeat", err);
+                return Flux.empty();
+            });
+    }
+
+    /**
+     * Determines if the system should scale based on comprehensive metrics.
+     * <p>
+     * Supports exponential scaling for rapid load increases:
+     * - Scale OUT (1-5 nodes): Based on load severity and recent scaling history
+     * - Scale IN (-1): Conservative, one node at a time
+     * - No change (0): System is balanced
+     * </p>
+     *
+     * @param updatedEntries Current node entries with metrics
+     * @param nowMs          Current timestamp
+     * @return ScalingDecision with scale count and reason
+     */
+    private ScalingDecision shouldScale(List<NodeEntry> updatedEntries, long nowMs) {
+        if (updatedEntries.isEmpty()) {
+            return new ScalingDecision(0, "empty-cluster");
+        }
+
+        int numbOfNodes = updatedEntries.size();
+
+        // Create current load snapshot
+        LoadSnapshot currentLoad = captureLoadSnapshot(updatedEntries);
+
+        // Calculate average metrics across all nodes
+        double totalCpu = updatedEntries.stream().mapToDouble(x -> x.lastHeartbeat.getCpu()).sum();
+        double totalMem = updatedEntries.stream().mapToDouble(x -> x.lastHeartbeat.getMem()).sum();
+        double totalMps = updatedEntries.stream().mapToDouble(x -> x.lastHeartbeat.getMps()).sum();
+        int totalConnections = updatedEntries.stream().mapToInt(x -> x.lastHeartbeat.getActiveConn()).sum();
+
+        double avgCpu = totalCpu / numbOfNodes;
+        double avgMem = totalMem / numbOfNodes;
+        double avgMps = totalMps / numbOfNodes;
+        double avgConnections = (double) totalConnections / numbOfNodes;
+
+        double avgLatencyMs = updatedEntries.stream()
+            .mapToDouble(x -> x.lastHeartbeat.getP95LatencyMs())
+            .average().orElse(0.0);
+
+        double avgKafkaLagMs = updatedEntries.stream()
+            .mapToDouble(x -> x.lastHeartbeat.getKafkaTopicLagLatencyMs())
+            .average().orElse(0.0);
+
+        // Find max values for hotspot detection
+        double maxCpu = updatedEntries.stream().mapToDouble(x -> x.lastHeartbeat.getCpu()).max().orElse(0.0);
+        double maxMem = updatedEntries.stream().mapToDouble(x -> x.lastHeartbeat.getMem()).max().orElse(0.0);
+        int maxConnections = updatedEntries.stream().mapToInt(x -> x.lastHeartbeat.getActiveConn()).max().orElse(0);
+
+        log.debug("Scale decision metrics: avgCpu={}, avgMem={}, avgMps={}, avgConn={}, avgLatency={}ms, avgKafkaLag={}ms",
+            String.format("%.1f%%", avgCpu * 100), String.format("%.1f%%", avgMem * 100),
+            String.format("%.2f", avgMps), String.format("%.0f", avgConnections), avgLatencyMs, avgKafkaLagMs);
+
+        // ========== SCALE OUT CONDITIONS ==========
+
+        // ========== SCALE OUT CONDITIONS ==========
+
+        // Determine scale urgency and calculate how many nodes to add
+        int scaleUrgency = 0; // 0=none, 1=moderate, 2=high, 3=critical
+        String urgencyReason = "";
+
+        // 1. Critical: CPU or Memory overload
+        if (avgCpu > 0.7 || avgMem > 0.75) {
+            scaleUrgency = Math.max(scaleUrgency, 3); // Critical
+            urgencyReason = "resource-overload";
+            log.warn("CRITICAL: Resource overload detected (CPU: {}, Mem: {})",
+                String.format("%.1f%%", avgCpu * 100), String.format("%.1f%%", avgMem * 100));
+        }
+
+        // 2. Critical: Any single node approaching capacity
+        if (maxCpu > 0.85 || maxMem > 0.9) {
+            scaleUrgency = Math.max(scaleUrgency, 3); // Critical
+            if (urgencyReason.isEmpty()) urgencyReason = "hotspot-detected";
+            log.warn("CRITICAL: Hotspot detected (maxCpu: {}, maxMem: {})",
+                String.format("%.1f%%", maxCpu * 100), String.format("%.1f%%", maxMem * 100));
+        }
+
+        // 3. High latency with moderate load (system struggling)
+        if (avgLatencyMs > 500 && (avgCpu > 0.5 || avgMem > 0.5)) {
+            scaleUrgency = Math.max(scaleUrgency, 2); // High
+            if (urgencyReason.isEmpty()) urgencyReason = "high-latency";
+            log.warn("HIGH URGENCY: High latency ({}ms) with moderate load (CPU: {}, Mem: {})",
+                avgLatencyMs, String.format("%.1f%%", avgCpu * 100), String.format("%.1f%%", avgMem * 100));
+        }
+
+        // 4. High Kafka lag with moderate load (message backlog building up)
+        if (avgKafkaLagMs > 500 && (avgCpu > 0.5 || avgMem > 0.5)) {
+            scaleUrgency = Math.max(scaleUrgency, 2); // High
+            if (urgencyReason.isEmpty()) urgencyReason = "kafka-backlog";
+            log.warn("HIGH URGENCY: High Kafka lag ({}ms) with moderate load", avgKafkaLagMs);
+        }
+
+        // 5. High throughput with performance degradation
+        // Scale when MPS is high AND system shows stress (CPU/memory/latency increasing together)
+        // This indicates throughput is approaching node capacity
+        boolean highThroughput = avgMps > 100; // Baseline: node is actively processing messages
+        boolean performanceDegrading = avgLatencyMs > 200 || avgCpu > 0.55 || avgMem > 0.6;
+
+        if (highThroughput && performanceDegrading) {
+            // Calculate throughput/resource ratio to detect saturation
+            // If we're processing many messages but system is stressed, we're at capacity
+            double mpsPerCpuPercent = avgMps / (avgCpu * 100 + 1); // +1 to avoid division by zero
+            double mpsPerMemPercent = avgMps / (avgMem * 100 + 1);
+
+            // Low ratio = high resource usage per message = approaching capacity
+            if (mpsPerCpuPercent < 2.0 || mpsPerMemPercent < 2.0) {
+                scaleUrgency = Math.max(scaleUrgency, 2); // High
+                if (urgencyReason.isEmpty()) urgencyReason = "throughput-saturation";
+                log.warn("HIGH URGENCY: High throughput with resource saturation " +
+                         "(MPS: {}, CPU: {}, Mem: {}, Latency: {}ms, MPS/CPU ratio: {}, MPS/Mem ratio: {})",
+                    String.format("%.2f", avgMps), String.format("%.1f%%", avgCpu * 100),
+                    String.format("%.1f%%", avgMem * 100), avgLatencyMs,
+                    String.format("%.2f", mpsPerCpuPercent), String.format("%.2f", mpsPerMemPercent));
+            }
+        }
+
+        // 6. High connection count with performance degradation
+        // Scale when connections are high AND system performance is suffering
+        // This indicates connection load is approaching node capacity
+        boolean highConnections = avgConnections > 500; // Baseline: node has significant connection load
+        boolean connectionStress = avgLatencyMs > 150 || avgCpu > 0.5 || avgMem > 0.55;
+
+        if (highConnections && connectionStress) {
+            // Calculate connections per resource unit to detect saturation
+            double connectionsPerCpuPercent = avgConnections / (avgCpu * 100 + 1);
+            double connectionsPerMemPercent = avgConnections / (avgMem * 100 + 1);
+
+            // Low ratio = high resource usage per connection = approaching capacity
+            // Also consider if latency is increasing disproportionately with connection count
+            boolean resourceSaturation = connectionsPerCpuPercent < 15 || connectionsPerMemPercent < 12;
+            boolean latencyDegradation = avgLatencyMs > 100 && avgConnections > 1000;
+
+            if (resourceSaturation || latencyDegradation) {
+                scaleUrgency = Math.max(scaleUrgency, 2); // High
+                if (urgencyReason.isEmpty()) urgencyReason = "connection-saturation";
+                log.warn("HIGH URGENCY: High connection count with performance degradation " +
+                         "(Connections: {}, CPU: {}, Mem: {}, Latency: {}ms, Conn/CPU ratio: {}, Conn/Mem ratio: {})",
+                    String.format("%.0f", avgConnections), String.format("%.1f%%", avgCpu * 100),
+                    String.format("%.1f%%", avgMem * 100), avgLatencyMs,
+                    String.format("%.2f", connectionsPerCpuPercent), String.format("%.2f", connectionsPerMemPercent));
+            }
+        }
+
+        // 7. Multiple moderate pressure indicators (combined stress)
+        boolean moderateCpuPressure = avgCpu > 0.6;
+        boolean moderateMemPressure = avgMem > 0.65;
+        boolean moderateLatency = avgLatencyMs > 300;
+        boolean moderateMps = avgMps > 600;
+        boolean moderateConnections = avgConnections > 3000;
+
+        int pressureIndicators = 0;
+        if (moderateCpuPressure) pressureIndicators++;
+        if (moderateMemPressure) pressureIndicators++;
+        if (moderateLatency) pressureIndicators++;
+        if (moderateMps) pressureIndicators++;
+        if (moderateConnections) pressureIndicators++;
+
+        if (pressureIndicators >= 3) {
+            scaleUrgency = Math.max(scaleUrgency, 1); // Moderate
+            if (urgencyReason.isEmpty()) urgencyReason = "multiple-pressure-indicators";
+            log.warn("MODERATE URGENCY: Multiple pressure indicators ({}/5) - CPU:{}, Mem:{}, Latency:{}, MPS:{}, Conn:{}",
+                pressureIndicators, moderateCpuPressure, moderateMemPressure, moderateLatency, moderateMps, moderateConnections);
+        }
+
+        // If any scale-out condition detected, calculate how many nodes to add
+        if (scaleUrgency > 0) {
+            int scaleCount = calculateExponentialScaleOut(scaleUrgency, currentLoad, nowMs);
+            String reason = String.format("%s (urgency=%d, adding %d nodes)",
+                urgencyReason, scaleUrgency, scaleCount);
+            return new ScalingDecision(scaleCount, reason);
+        }
+
+        // ========== SCALE IN CONDITIONS ==========
+
+        // Only consider scaling in if we have more than 2 nodes (maintain minimum)
+        if (numbOfNodes > 2) {
+            // Scale in when system has excess capacity
+            // Key indicators:
+            // 1. Very low resource utilization (CPU, Memory)
+            // 2. Good performance metrics (low latency, low Kafka lag)
+            // 3. System can handle current load with one fewer node
+
+            boolean veryLowCpu = avgCpu < 0.2;
+            boolean veryLowMem = avgMem < 0.25;
+            boolean excellentPerformance = avgLatencyMs < 100 && avgKafkaLagMs < 100;
+
+            // Calculate if system would still be healthy with one fewer node
+            // Assume load would redistribute: each remaining node gets (N/(N-1)) of current load
+            int remainingNodes = numbOfNodes - 1;
+            double redistributionFactor = (double) numbOfNodes / remainingNodes;
+            double projectedCpu = avgCpu * redistributionFactor;
+            double projectedMem = avgMem * redistributionFactor;
+
+            // Conservative: only scale in if projected CPU/mem would still be under 50%
+            boolean safeToRedistribute = projectedCpu < 0.5 && projectedMem < 0.55;
+
+            // Additional check: ensure current throughput and connections are sustainable
+            // by checking if they have good efficiency ratios
+            boolean sustainableThroughput = true;
+            boolean sustainableConnections = true;
+
+            if (avgMps > 50) { // If there's actual throughput
+                double mpsPerCpu = avgMps / (avgCpu * 100 + 1);
+                // High ratio = efficient processing = can handle redistribution
+                sustainableThroughput = mpsPerCpu > 5.0;
+            }
+
+            if (avgConnections > 200) { // If there are actual connections
+                double connectionsPerCpu = avgConnections / (avgCpu * 100 + 1);
+                // High ratio = efficient connection handling = can handle redistribution
+                sustainableConnections = connectionsPerCpu > 30;
+            }
+
+            // Scale in only if ALL conditions are met
+            if (veryLowCpu && veryLowMem && excellentPerformance &&
+                safeToRedistribute && sustainableThroughput && sustainableConnections) {
+                log.info("SCALE IN recommended: Excess capacity detected " +
+                         "(avgCPU: {}, avgMem: {}, latency: {}ms, projectedCPU after scale-in: {}, projectedMem: {})",
+                    String.format("%.1f%%", avgCpu * 100), String.format("%.1f%%", avgMem * 100),
+                    avgLatencyMs, String.format("%.1f%%", projectedCpu * 100),
+                    String.format("%.1f%%", projectedMem * 100));
+
+                // Reset scale-out tracking when scaling in
+                consecutiveScaleOutCount = 0;
+                return new ScalingDecision(-1, "excess-capacity");
+            }
+        }
+
+        // No scaling needed - system is balanced
+        log.debug("No scaling needed - system is balanced");
+
+        // Update last load snapshot even if not scaling
+        lastLoadSnapshot = currentLoad;
+
+        return new ScalingDecision(0, "balanced");
+    }
+
+    /**
+     * Calculates exponential scale-out count based on urgency and recent history.
+     *
+     * @param urgency     Urgency level (1=moderate, 2=high, 3=critical)
+     * @param currentLoad Current system load snapshot
+     * @param nowMs       Current timestamp
+     * @return Number of nodes to add (1-5)
+     */
+    private int calculateExponentialScaleOut(int urgency, LoadSnapshot currentLoad, long nowMs) {
+        // Base scale count by urgency
+        int baseScale = switch (urgency) {
+            case 3 -> 3; // Critical: start with 3 nodes
+            case 2 -> 2; // High: start with 2 nodes
+            default -> 1; // Moderate: start with 1 node
+        };
+
+        // Check if we scaled recently (within 5 minutes)
+        boolean recentlyScaled = (nowMs - lastScaleOutTimeMs) < SCALE_OUT_WINDOW_MS;
+
+        // Calculate load increase rate if we have previous snapshot
+        double loadIncreaseMultiplier = 1.0;
+        if (recentlyScaled && lastLoadSnapshot != null) {
+            loadIncreaseMultiplier = calculateLoadIncrease(lastLoadSnapshot, currentLoad);
+
+            // If load increased significantly despite recent scaling, scale more aggressively
+            if (loadIncreaseMultiplier > 1.5) {
+                log.warn("EXPONENTIAL SCALING: Load increased {}x despite recent scale-out",
+                    String.format("%.2f", loadIncreaseMultiplier));
+                baseScale = Math.min(baseScale + 2, MAX_SCALE_OUT_COUNT);
+            } else if (loadIncreaseMultiplier > 1.2) {
+                baseScale = Math.min(baseScale + 1, MAX_SCALE_OUT_COUNT);
+            }
+
+            // Exponential backoff: if we've scaled multiple times recently, be more aggressive
+            if (consecutiveScaleOutCount >= 2) {
+                log.warn("EXPONENTIAL SCALING: {} consecutive scale-outs in 5 minutes",
+                    consecutiveScaleOutCount);
+                baseScale = Math.min(baseScale + consecutiveScaleOutCount, MAX_SCALE_OUT_COUNT);
+            }
+        }
+
+        // Update tracking
+        lastScaleOutTimeMs = nowMs;
+        if (recentlyScaled) {
+            consecutiveScaleOutCount++;
+        } else {
+            consecutiveScaleOutCount = 1;
+        }
+        lastLoadSnapshot = currentLoad;
+
+        int finalScale = Math.min(baseScale, MAX_SCALE_OUT_COUNT);
+
+        log.info("Exponential scale-out calculation: urgency={}, baseScale={}, consecutive={}, loadIncrease={}x, finalScale={}",
+            urgency, baseScale, consecutiveScaleOutCount,
+            String.format("%.2f", loadIncreaseMultiplier), finalScale);
+
+        return finalScale;
+    }
+
+    /**
+     * Captures current system load snapshot for trend analysis.
+     */
+    private LoadSnapshot captureLoadSnapshot(List<NodeEntry> entries) {
+        double avgCpu = entries.stream().mapToDouble(e -> e.lastHeartbeat.getCpu()).average().orElse(0.0);
+        double avgMem = entries.stream().mapToDouble(e -> e.lastHeartbeat.getMem()).average().orElse(0.0);
+        double avgMps = entries.stream().mapToDouble(e -> e.lastHeartbeat.getMps()).average().orElse(0.0);
+        double avgConn = entries.stream().mapToInt(e -> e.lastHeartbeat.getActiveConn()).average().orElse(0.0);
+        double avgLatency = entries.stream().mapToDouble(e -> e.lastHeartbeat.getP95LatencyMs()).average().orElse(0.0);
+
+        return new LoadSnapshot(avgCpu, avgMem, avgMps, avgConn, avgLatency);
+    }
+
+    /**
+     * Calculates load increase ratio between two snapshots.
+     * Returns multiplier > 1.0 if load increased, < 1.0 if decreased.
+     */
+    private double calculateLoadIncrease(LoadSnapshot previous, LoadSnapshot current) {
+        // Calculate weighted increase across all metrics
+        double cpuIncrease = current.cpu / (previous.cpu + 0.01);
+        double memIncrease = current.mem / (previous.mem + 0.01);
+        double mpsIncrease = current.mps / (previous.mps + 1.0);
+        double connIncrease = current.connections / (previous.connections + 1.0);
+        double latencyIncrease = current.latencyMs / (previous.latencyMs + 1.0);
+
+        // Weighted average: CPU and memory are most important
+        return (cpuIncrease * 0.3 + memIncrease * 0.3 +
+                mpsIncrease * 0.2 + connIncrease * 0.1 + latencyIncrease * 0.1);
+    }
+
+    /**
+     * Immutable snapshot of system load at a point in time.
+     */
+    private record LoadSnapshot(
+        double cpu,
+        double mem,
+        double mps,
+        double connections,
+        double latencyMs
+    ) {
+    }
+
+    /**
+     * Scaling decision with count and reason.
+     */
+    private record ScalingDecision(
+        int scaleCount,  // Positive = scale out, negative = scale in, 0 = no change
+        String reason
+    ) {
+    }
+
+    /**
+     * Determines if weights should be recalculated based on:
+     * 1. Topology changes (nodes added/removed)
+     * 2. Extreme load imbalance
+     * 3. Weight equalization need (unequal weights but balanced load)
+     * 4. Weight convergence - prevents unnecessary rebalancing when system is stable
+     */
+    private boolean shouldRecalculateWeights(List<NodeEntry> entries, boolean topologyChanged) {
+        if (topologyChanged) {
+            return true;
+        }
+
+        // Check for extreme load imbalance
+        if (entries.isEmpty()) {
+            return false;
+        }
+
+        double maxCpu = entries.stream().mapToDouble(e -> e.lastHeartbeat.getCpu()).max().orElse(0.0);
+        double minCpu = entries.stream().mapToDouble(e -> e.lastHeartbeat.getCpu()).min().orElse(0.0);
+        double maxMem = entries.stream().mapToDouble(e -> e.lastHeartbeat.getMem()).max().orElse(0.0);
+        double minMem = entries.stream().mapToDouble(e -> e.lastHeartbeat.getMem()).min().orElse(0.0);
+        double maxLatency = entries.stream().mapToDouble(e -> e.lastHeartbeat.getP95LatencyMs()).max().orElse(0.0);
+        double avgLatency = entries.stream().mapToDouble(e -> e.lastHeartbeat.getP95LatencyMs()).average().orElse(0.0);
+
+        // Check convergence status
+        // If converged (weights and load both balanced, system stable), skip recalculation
+        // If NOT converged, the method returns false which means we should continue checking
+        ConvergenceStatus status = checkConvergenceStatus(entries);
+
+        if (status == ConvergenceStatus.CONVERGED_AND_STABLE) {
+            log.debug("System has converged to balanced state - skipping unnecessary weight recalculation");
+            return false;
+        } else if (status == ConvergenceStatus.NEEDS_EQUALIZATION) {
+            log.info("Load has balanced but weights are unequal - will equalize weights");
+            return true; // Recalculate to equalize
+        }
+
+        // Extreme situations that warrant immediate rebalancing:
+        // 1. Large CPU imbalance (>40% difference)
+        boolean extremeCpuImbalance = (maxCpu - minCpu) > 0.4;
+
+        // 2. Large memory imbalance (>40% difference)
+        boolean extremeMemImbalance = (maxMem - minMem) > 0.4;
+
+        // 3. Any node above 80% CPU or 85% memory
+        boolean anyNodeOverloaded = entries.stream()
+            .anyMatch(e -> e.lastHeartbeat.getCpu() > 0.8 || e.lastHeartbeat.getMem() > 0.85);
+
+        // 4. Large latency spike (node latency >2x average and >500ms)
+        boolean extremeLatencyImbalance = maxLatency > 500 && maxLatency > avgLatency * 2;
+
+        boolean shouldRebalance = extremeCpuImbalance || extremeMemImbalance ||
+                                  anyNodeOverloaded || extremeLatencyImbalance;
+
+        if (shouldRebalance) {
+            log.info("Extreme load detected - CPU imbalance: {}, Mem imbalance: {}, Overloaded: {}, Latency spike: {}",
+                extremeCpuImbalance, extremeMemImbalance, anyNodeOverloaded, extremeLatencyImbalance);
+        }
+
+        return shouldRebalance;
+    }
+
+    /**
+     * Convergence status enum.
+     */
+    private enum ConvergenceStatus {
+        CONVERGED_AND_STABLE,  // No recalculation needed
+        NEEDS_EQUALIZATION,     // Must recalculate to equalize weights
+        NOT_CONVERGED           // Normal imbalance detection logic applies
+    }
+
+    /**
+     * Checks the system convergence status.
+     * <p>
+     * Three possible states:
+     * 1. CONVERGED_AND_STABLE: Weights match load, no recalculation needed
+     * 2. NEEDS_EQUALIZATION: Load balanced but weights unequal, must equalize
+     * 3. NOT_CONVERGED: System still balancing, normal checks apply
+     * </p>
+     *
+     * @param entries Current node entries
+     * @return Convergence status
+     */
+    private ConvergenceStatus checkConvergenceStatus(List<NodeEntry> entries) {
+        if (entries.size() < 2) {
+            return ConvergenceStatus.CONVERGED_AND_STABLE;
+        }
+
+        // Measure weight variance
+        int maxWeight = entries.stream().mapToInt(NodeEntry::weight).max().orElse(100);
+        int minWeight = entries.stream().mapToInt(NodeEntry::weight).min().orElse(100);
+        double weightVariance = (double)(maxWeight - minWeight) / WEIGHT_PER_NODE;
+
+        // Measure load variance
+        double maxCpu = entries.stream().mapToDouble(e -> e.lastHeartbeat.getCpu()).max().orElse(0.0);
+        double minCpu = entries.stream().mapToDouble(e -> e.lastHeartbeat.getCpu()).min().orElse(0.0);
+        double maxMem = entries.stream().mapToDouble(e -> e.lastHeartbeat.getMem()).max().orElse(0.0);
+        double minMem = entries.stream().mapToDouble(e -> e.lastHeartbeat.getMem()).min().orElse(0.0);
+
+        double cpuVariance = maxCpu - minCpu;
+        double memVariance = maxMem - minMem;
+
+        // Check if all nodes are healthy
+        double avgCpu = entries.stream().mapToDouble(e -> e.lastHeartbeat.getCpu()).average().orElse(0.0);
+        double avgMem = entries.stream().mapToDouble(e -> e.lastHeartbeat.getMem()).average().orElse(0.0);
+        boolean allNodesHealthy = avgCpu < 0.7 && avgMem < 0.7 && maxCpu < 0.85 && maxMem < 0.85;
+
+        // Scenario 1: Weights are balanced (≈100 each) AND load is balanced
+        // → System is optimal, no recalculation needed
+        boolean weightsAreBalanced = weightVariance < 0.15; // Within 85-115 range
+        boolean loadIsBalanced = cpuVariance < 0.15 && memVariance < 0.15; // Very balanced (<15% diff)
+
+        if (weightsAreBalanced && loadIsBalanced && allNodesHealthy) {
+            log.debug("System converged: weights and load both balanced (optimal state)");
+            return ConvergenceStatus.CONVERGED_AND_STABLE;
+        }
+
+        // Scenario 2: Weights are unbalanced BUT load is balanced
+        // → This means unequal weights are NOT needed anymore, should equalize
+        // Example: weights={130, 70, 130}, load={40%, 40%, 40%} → Should recalculate to {100, 100, 100}
+        boolean weightsAreUnbalanced = weightVariance > 0.15;
+        boolean loadHasBecomeBalanced = cpuVariance < 0.15 && memVariance < 0.15;
+
+        if (weightsAreUnbalanced && loadHasBecomeBalanced && allNodesHealthy) {
+            log.info("Load has balanced despite unequal weights - will equalize weights " +
+                     "(weightVariance={:.1f}%, loadVariance={:.1f}%)",
+                weightVariance * 100, Math.max(cpuVariance, memVariance) * 100);
+            return ConvergenceStatus.NEEDS_EQUALIZATION;
+        }
+
+        // Scenario 3: Weights are working (unbalanced weights balancing unbalanced load)
+        // → System is doing its job, don't interfere
+        // Example: weights={130, 70, 130}, load={35%, 55%, 35%} → Keep current weights
+        boolean weightsAreWorkingToBalance = weightsAreUnbalanced && !loadIsBalanced;
+        boolean loadNotExtreme = cpuVariance < 0.35 && memVariance < 0.35; // < 35% difference
+
+        if (weightsAreWorkingToBalance && loadNotExtreme && allNodesHealthy) {
+            log.debug("Weights are actively balancing load - maintaining current distribution");
+            return ConvergenceStatus.CONVERGED_AND_STABLE;
+        }
+
+        // Default: not converged, allow normal imbalance detection logic to decide
+        return ConvergenceStatus.NOT_CONVERGED;
+    }
+
+    /**
+     * Calculates optimal weights for nodes based on their metrics.
+     * Lower load/latency = higher weight (more traffic)
+     * Total weight = 100 * numNodes
+     */
+    private Map<String, Integer> calculateNodeWeights(List<NodeEntry> entries) {
+        if (entries.isEmpty()) {
+            return Collections.emptyMap();
+        }
+
+        int numNodes = entries.size();
+        int targetTotalWeight = WEIGHT_PER_NODE * numNodes;
+        double maxp95 = entries.stream().mapToDouble(x -> x.lastHeartbeat.getP95LatencyMs()).max().orElse(1d);
+        double maxKafkaLag = entries.stream().mapToDouble(x -> x.lastHeartbeat.getKafkaTopicLagLatencyMs()).max().orElse(1d);
+        double maxActiveConn = entries.stream().mapToDouble(x -> x.lastHeartbeat.getActiveConn()).max().orElse(1d);
+
+        // Calculate load scores for each node (lower is better)
+        Map<String, Double> loadScores = new HashMap<>();
+        for (NodeEntry entry : entries) {
+            Heartbeat hb = entry.lastHeartbeat;
+
+            // Composite load score (0.0 = best, higher = worse)
+            // CPU and memory are primary factors (35% each)
+            // Latency, kafka lag, and connection count are secondary (30% total)
+            double cpuScore = hb.getCpu() * 0.35;
+            double memScore = hb.getMem() * 0.35;
+
+            // Normalize latency
+            double latencyScore = Math.min(hb.getP95LatencyMs() / maxp95, 1.0) * 0.15;
+
+            // Normalize kafka lag
+            double kafkaLagScore = Math.min(hb.getKafkaTopicLagLatencyMs() / maxKafkaLag, 1.0) * 0.1;
+
+            // Normalize active connections
+            double connScore = Math.min(hb.getActiveConn() / maxActiveConn, 1.0) * 0.05;
+
+            double totalScore = cpuScore + memScore + latencyScore + kafkaLagScore + connScore;
+            loadScores.put(entry.nodeId, totalScore);
+        }
+
+        // Calculate inverse scores (higher load = lower inverse score)
+        // Add small epsilon to avoid division by zero
+        double epsilon = 0.1;
+        Map<String, Double> inverseScores = new HashMap<>();
+        for (Map.Entry<String, Double> entry : loadScores.entrySet()) {
+            // Invert the score: nodes with low load get high inverse scores
+            inverseScores.put(entry.getKey(), 1.0 / (entry.getValue() + epsilon));
+        }
+
+        // Calculate total inverse score
+        double totalInverseScore = inverseScores.values().stream().mapToDouble(Double::doubleValue).sum();
+
+        // Distribute weights proportionally to inverse scores
+        Map<String, Integer> weights = new HashMap<>();
+        int assignedWeight = 0;
+
+        List<String> nodeIds = new ArrayList<>(inverseScores.keySet());
+        for (int i = 0; i < nodeIds.size(); i++) {
+            String nodeId = nodeIds.get(i);
+            double inverseScore = inverseScores.get(nodeId);
+
+            int weight;
+            if (i == nodeIds.size() - 1) {
+                // Last node gets remaining weight to ensure sum is exact
+                weight = targetTotalWeight - assignedWeight;
+            } else {
+                weight = (int) Math.round((inverseScore / totalInverseScore) * targetTotalWeight);
+                // Ensure minimum weight of 10 (1% of base weight)
+                weight = Math.max(10, weight);
+            }
+
+            weights.put(nodeId, weight);
+            assignedWeight += weight;
+        }
+
+        log.info("Calculated node weights: {}", weights);
+        log.info("Load scores: {}", loadScores);
+
+        return weights;
+    }
+
+    /**
+     * Builds a human-readable reason for topology changes.
+     */
+    private String buildTopologyChangeReason(Set<String> newNodes, Set<String> removedNodes) {
+        StringBuilder reason = new StringBuilder();
+
+        if (!newNodes.isEmpty()) {
+            reason.append("nodes-joined: ").append(String.join(", ", newNodes));
+        }
+
+        if (!removedNodes.isEmpty()) {
+            if (!reason.isEmpty()) {
+                reason.append("; ");
+            }
+            reason.append("nodes-removed: ").append(String.join(", ", removedNodes));
+        }
+
+        return reason.toString();
+    }
+
+    /**
+     * Publishes a scaling signal to Kafka for external autoscalers.
+     * <p>
+     * This signal can be consumed by:
+     * - Kubernetes HPA (Horizontal Pod Autoscaler)
+     * - KEDA (Kubernetes Event Driven Autoscaler)
+     * - Custom autoscaling controllers
+     * </p>
+     *
+     * @param scalingDecision Scaling decision with count and reason
+     * @param entries         Current node entries for metrics
+     * @return Mono completing when signal is published
+     */
+    private Mono<Void> publishScalingSignal(ScalingDecision scalingDecision, List<NodeEntry> entries) {
+        int scaleCount = scalingDecision.scaleCount;
+        String action = scaleCount > 0 ? "SCALE_OUT" : "SCALE_IN";
+        int currentNodes = entries.size();
+        int recommendedNodes = scaleCount > 0
+            ? currentNodes + scaleCount
+            : Math.max(2, currentNodes + scaleCount); // scaleCount is negative for scale-in
+
+        // Calculate summary metrics for the reason
+        double avgCpu = entries.stream().mapToDouble(e -> e.lastHeartbeat.getCpu()).average().orElse(0.0);
+        double avgMem = entries.stream().mapToDouble(e -> e.lastHeartbeat.getMem()).average().orElse(0.0);
+        double avgMps = entries.stream().mapToDouble(e -> e.lastHeartbeat.getMps()).average().orElse(0.0);
+        double avgConnections = entries.stream().mapToInt(e -> e.lastHeartbeat.getActiveConn()).average().orElse(0.0);
+        double avgLatency = entries.stream().mapToDouble(e -> e.lastHeartbeat.getP95LatencyMs()).average().orElse(0.0);
+
+        String reason = String.format("%s recommended: nodes=%d->%d (+%d), cpu=%.1f%%, mem=%.1f%%, mps=%.2f, conn=%.0f, latency=%.0fms, reason=%s",
+            action, currentNodes, recommendedNodes, Math.abs(scaleCount),
+            avgCpu * 100, avgMem * 100, avgMps, avgConnections, avgLatency,
+            scalingDecision.reason);
+
+        log.info("Publishing scaling signal: {}", reason);
+
+        ControlMessages.ScaleSignal scaleSignal = ControlMessages.ScaleSignal.builder()
+            .reason(reason)
+            .ts(System.currentTimeMillis())
+            .build();
+
+        return kafkaPublisher.publishScaleSignal(scaleSignal)
+            .doOnError(err -> log.error("Failed to publish scaling signal: {}", err.getMessage()));
     }
 
     /**
@@ -173,12 +853,13 @@ public class LoadBalancer implements ILoadBalancer {
         // Create new ring with SkeletonWeightedRendezvousHash
         this.currentHash = new SkeletonWeightedRendezvousHash(nodeWeights);
 
-        log.info("Ring recomputed: version={}, nodes={}, reason={}",
-            version.getVersion(), nodeWeights.size(), reason);
+        log.info("Ring recomputed: version={}, nodes={}, weights={}, reason={}",
+            version.getVersion(), nodeWeights.size(), nodeWeights, reason);
 
-        // Publish to Kafka
+        // Publish to Kafka with node weights so socket nodes can update their hash
         ControlMessages.RingUpdate ringUpdate = ControlMessages.RingUpdate.builder()
             .version(version)
+            .nodeWeights(nodeWeights)
             .reason(reason)
             .ts(System.currentTimeMillis())
             .build();

@@ -5,6 +5,8 @@ import lombok.Builder;
 import lombok.Value;
 import lombok.With;
 
+import java.util.Map;
+
 /**
  * Control messages exchanged between load-balancer and socket nodes.
  * <p>
@@ -28,6 +30,12 @@ public final class ControlMessages {
          * New distribution version.
          */
         DistributionVersion version;
+
+        /**
+         * Node weights for consistent hashing.
+         * Map of nodeId -> weight (integer, typically 1-500, sum should be 100 * numNodes)
+         */
+        Map<String, Integer> nodeWeights;
 
         /**
          * Human-readable reason for this update (e.g., "node-3 joined").

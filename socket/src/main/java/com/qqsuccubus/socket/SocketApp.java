@@ -6,6 +6,7 @@ import com.qqsuccubus.socket.kafka.KafkaService;
 import com.qqsuccubus.socket.metrics.MetricsService;
 import com.qqsuccubus.socket.metrics.PrometheusMetricsExporter;
 import com.qqsuccubus.socket.redis.RedisService;
+import com.qqsuccubus.socket.ring.RingService;
 import com.qqsuccubus.socket.session.SessionManager;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -32,12 +33,17 @@ public class SocketApp {
 
         // Setup metrics registry with Prometheus support
         PrometheusMetricsExporter metricsExporter = new PrometheusMetricsExporter(config.getNodeId());
+
         // Initialize services
         RedisService redisService = new RedisService(config);
         MetricsService metricsService = new MetricsService(metricsExporter.getRegistry(), config);
         SessionManager sessionManager = new SessionManager(redisService, config, metricsService);
+
+        // Initialize ring service for consistent hashing
+        RingService ringService = new RingService();
+
         KafkaService kafkaService = new KafkaService(
-            config, sessionManager, metricsService, sessionManager.getBufferService()
+            config, sessionManager, metricsService, sessionManager.getBufferService(), ringService
         );
 
         // Start Kafka consumers (block until initialized)

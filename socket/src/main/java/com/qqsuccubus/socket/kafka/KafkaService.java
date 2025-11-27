@@ -7,6 +7,7 @@ import com.qqsuccubus.core.util.BytesUtils;
 import com.qqsuccubus.core.util.JsonUtils;
 import com.qqsuccubus.socket.config.SocketConfig;
 import com.qqsuccubus.socket.metrics.MetricsService;
+import com.qqsuccubus.socket.ring.RingService;
 import com.qqsuccubus.socket.session.ISessionManager;
 import com.qqsuccubus.socket.session.MessageBufferService;
 import org.apache.kafka.clients.admin.AdminClient;
@@ -32,18 +33,6 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
 
-/**
- * Kafka service for two-hop relay and control message consumption.
- * <p>
- * Responsibilities:
- * <ul>
- *   <li>Consume DELIVERY_NODE messages (key = nodeId)</li>
- *   <li>Consume CONTROL_RING for ring updates</li>
- *   <li>Produce to DELIVERY_NODE for two-hop relay</li>
- * </ul>
- * Implements IKafkaService for dependency inversion.
- * </p>
- */
 public class KafkaService implements IKafkaService {
     private static final Logger log = LoggerFactory.getLogger(KafkaService.class);
 
@@ -51,6 +40,7 @@ public class KafkaService implements IKafkaService {
     private final ISessionManager sessionManager;
     private final MetricsService metricsService;
     private final MessageBufferService bufferService;
+    private final RingService ringService;
 
     private final KafkaSender<String, String> sender;
     private final AdminClient adminClient;
@@ -63,11 +53,13 @@ public class KafkaService implements IKafkaService {
     private static final short REPLICATION_FACTOR = 1;    // Replication factor (1 for dev, 3+ for prod)
 
     public KafkaService(SocketConfig config, ISessionManager sessionManager,
-                        MetricsService metricsService, MessageBufferService bufferService) {
+                        MetricsService metricsService, MessageBufferService bufferService,
+                        RingService ringService) {
         this.config = config;
         this.sessionManager = sessionManager;
         this.metricsService = metricsService;
         this.bufferService = bufferService;
+        this.ringService = ringService;
 
         // Setup producer
         Map<String, Object> producerProps = new HashMap<>();
@@ -168,16 +160,29 @@ public class KafkaService implements IKafkaService {
     private Flux<Object> listenToControlMessages() {
         return controlReceiver.receive()
             .flatMap(record -> {
-                ControlMessages.RingUpdate ringUpdate = JsonUtils.readValue(
-                    record.value(),
-                    ControlMessages.RingUpdate.class
-                );
-                log.info(
-                    "Ring update received: version={}, reason={}",
-                    ringUpdate.getVersion().getVersion(), ringUpdate.getReason()
-                );
-                record.receiverOffset().acknowledge();
-                return Mono.empty();
+                try {
+                    ControlMessages.RingUpdate ringUpdate = JsonUtils.readValue(
+                        record.value(),
+                        ControlMessages.RingUpdate.class
+                    );
+
+                    log.info(
+                        "Ring update received: version={}, nodes={}, reason={}",
+                        ringUpdate.getVersion().getVersion(),
+                        ringUpdate.getNodeWeights() != null ? ringUpdate.getNodeWeights().size() : 0,
+                        ringUpdate.getReason()
+                    );
+
+                    // Update local ring state
+                    ringService.updateRing(ringUpdate);
+
+                    record.receiverOffset().acknowledge();
+                    return Mono.empty();
+                } catch (Exception e) {
+                    log.error("Failed to process ring update", e);
+                    record.receiverOffset().acknowledge(); // Acknowledge to skip bad message
+                    return Mono.empty();
+                }
             })
             .onErrorContinue((err, obj) -> log.error("Error processing control message", err));
     }
@@ -268,6 +273,12 @@ public class KafkaService implements IKafkaService {
      * Sends the message directly to the target node's dedicated topic,
      * ensuring 100% traffic efficiency - only the target node will read it.
      * </p>
+     * <p>
+     * Target node resolution order:
+     * 1. envelope.nodeId (from Redis session)
+     * 2. targetNodeIdHint (local hint)
+     * 3. Consistent hash based on recipient clientId
+     * </p>
      *
      * @param targetNodeIdHint Target node identifier hint (can be null)
      * @param envelope         Message envelope
@@ -279,8 +290,21 @@ public class KafkaService implements IKafkaService {
             return Mono.error(new IllegalArgumentException("Envelope cannot be null"));
         }
 
-        // Try to resolve target node from Redis session, then envelope, then hint
-        return Mono.justOrEmpty(envelope.getNodeId()).switchIfEmpty(Mono.justOrEmpty(targetNodeIdHint))
+        // Try to resolve target node: 1) Redis session 2) hint 3) consistent hash
+        return Mono.justOrEmpty(envelope.getNodeId())
+            .switchIfEmpty(Mono.justOrEmpty(targetNodeIdHint))
+            .switchIfEmpty(Mono.defer(() -> {
+                // Use consistent hash to determine target node based on recipient
+                String targetFromHash = ringService.resolveTargetNode(envelope.getToClientId());
+                if (targetFromHash == null) {
+                    log.warn("Could not resolve target node for client {} - ring not initialized or empty",
+                        envelope.getToClientId());
+                    return Mono.empty();
+                }
+                log.info("Resolved target node {} for client {} using consistent hash",
+                    targetFromHash, envelope.getToClientId());
+                return Mono.just(targetFromHash);
+            }))
             .flatMap(resolvedNodeId -> {
                 log.info(
                     "Serializing envelope for relay: msgId={}, from={}, to={}, targetNode={}",
