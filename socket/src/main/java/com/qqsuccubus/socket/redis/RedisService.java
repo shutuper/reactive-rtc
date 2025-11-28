@@ -132,7 +132,7 @@ public class RedisService implements IRedisService {
             .then(commands.xtrim(streamKey, XTrimArgs.Builder.minId(minId).approximateTrimming()))
             .then(commands.expire(streamKey, config.getResumeTtlSec()))
             .then()
-            .doOnSuccess(v -> log.info("Appended message to stream for client {} and trimmed old messages", clientId))
+            .doOnSuccess(v -> log.debug("Appended message to stream for client {} and trimmed old messages", clientId))
             .doOnError(err -> log.error("Failed to append to buffer stream for {}", clientId, err));
     }
 

@@ -73,7 +73,7 @@ public class WebSocketHandler {
 								  String clientId, int resumeOffset) {
 
 		MDC.put("clientId", clientId);
-		log.info("WebSocket handshake for client {} (resume={})", clientId, resumeOffset);
+		log.debug("WebSocket handshake for client {} (resume={})", clientId, resumeOffset);
 		// Create session
 		return sessionManager.createSession(clientId, resumeOffset)
 				.flatMap(session -> {
@@ -101,7 +101,7 @@ public class WebSocketHandler {
 					))
 					.onReadIdle(idleTimeoutInMillis, outbound::sendClose)
 					.onDispose(() -> {
-						log.info("WebSocket connection disposed for client {}, removing session", clientId);
+						log.debug("WebSocket connection disposed for client {}, removing session", clientId);
 						sessionManager.removeSession(clientId).subscribe();
 					});
 		});
@@ -129,7 +129,12 @@ public class WebSocketHandler {
 							return Mono.empty();
 						})
 				)
-				.doOnError(err -> log.error("Fatal error in inbound stream for {}", clientId, err))
+				.doOnError(err -> {
+					// Only log non-AbortedException errors (AbortedException is expected on close)
+					if (!(err instanceof reactor.netty.channel.AbortedException)) {
+						log.error("Fatal error in inbound stream for {}", clientId, err);
+					}
+				})
 				.onErrorResume(err -> Mono.empty())
 				.then();
 	}
@@ -142,7 +147,7 @@ public class WebSocketHandler {
 
 	private Mono<Void> handleInboundMessage(String userId, String messageJson) {
 		try {
-			log.info("Processing message from {}: {}", userId, messageJson);
+			log.debug("Processing message from {}: {}", userId, messageJson);
 
 			// Record inbound WebSocket traffic
 			metricsService.recordNetworkInboundWs(BytesUtils.getBytesLength(messageJson));
@@ -162,7 +167,7 @@ public class WebSocketHandler {
 				case "ack" -> {
 					// Client acknowledged a message
 					String msgId = msg.getMsgId();
-					log.info("User {} acked msgId {}", userId, msgId);
+					log.debug("User {} acked msgId {}", userId, msgId);
 					return Mono.empty();
 				}
 				case "ping" -> {
@@ -185,18 +190,18 @@ public class WebSocketHandler {
 	}
 
 	private Mono<Void> sendMessage(Envelope envelope) {
-		log.info("Attempting to deliver message from {} to {}", envelope.getFrom(), envelope.getToClientId());
+		log.debug("Attempting to deliver message from {} to {}", envelope.getFrom(), envelope.getToClientId());
 
 		// Try local delivery first
 		return sessionManager.deliverMessage(envelope)
 				.flatMap(delivered -> {
 					if (delivered) {
-						log.info("Message delivered locally from {} to {}", envelope.getFrom(), envelope.getToClientId());
+						log.debug("Message delivered locally from {} to {}", envelope.getFrom(), envelope.getToClientId());
 						// Record latency for local delivery
 						metricsService.recordLatencyMs(envelope.getTs());
 						return Mono.empty();
 					}
-					log.info("Message to {} not delivered locally, resolving target node", envelope.getToClientId());
+					log.debug("Message to {} not delivered locally, resolving target node", envelope.getToClientId());
 					return kafkaService.publishRelay(null, envelope)
 							.doOnSuccess(v -> {
 								// Record latency for relay delivery (includes Kafka publish time)

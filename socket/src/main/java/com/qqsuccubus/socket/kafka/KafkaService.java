@@ -213,7 +213,7 @@ public class KafkaService implements IKafkaService {
 
                     Envelope envelope = JsonUtils.readValue(messageValue, Envelope.class);
                     metricsService.recordKafkaDeliveryTopicLatency(envelope.getTs());
-                    log.info(
+                    log.debug(
                         "Kafka message received for node {}: from={}, to={}, msgId={}",
                         currentNodeId, envelope.getFrom(), envelope.getToClientId(),
                         envelope.getMsgId()
@@ -224,7 +224,7 @@ public class KafkaService implements IKafkaService {
                         .flatMap(delivered -> {
                             if (delivered) {
                                 // Successfully delivered to connected client
-                                log.info("Message delivered to connected client: {}", envelope.getToClientId());
+                                log.debug("Message delivered to connected client: {}", envelope.getToClientId());
 
                                 metricsService.recordDeliverRelay();
                                 // Record relay delivery latency (Kafka consumer -> client delivery)
@@ -235,7 +235,7 @@ public class KafkaService implements IKafkaService {
                                 return Mono.empty();
                             } else {
                                 // Client not connected on this node, buffer in Redis for later resume
-                                log.info(
+                                log.debug(
                                     "Client {} not connected on node {}, check via Redis/buffering message in Redis",
                                     envelope.getToClientId(), currentNodeId
                                 );
@@ -245,13 +245,13 @@ public class KafkaService implements IKafkaService {
                                     ).flatMap(targetNodeId -> publishRelay(targetNodeId, envelope)
                                         //todo add control to read messages from buffer on another node + write it there
                                         .doOnSuccess(v -> {
-                                            log.info(
+                                            log.debug(
                                                 "Two-hop relay message sent to client: {}", envelope.getToClientId()
                                             );
                                             record.receiverOffset().acknowledge();
                                         }).then(Mono.empty())
                                     ).switchIfEmpty(bufferService.bufferMessage(envelope).doOnSuccess(v -> {
-                                        log.info("Message buffered in Redis for client: {}", envelope.getToClientId());
+                                        log.debug("Message buffered in Redis for client: {}", envelope.getToClientId());
                                         record.receiverOffset().acknowledge();
                                     }))
                                     .then();
@@ -265,7 +265,7 @@ public class KafkaService implements IKafkaService {
                             );
 
                             return bufferService.bufferMessage(envelope).doOnSuccess(v -> {
-                                    log.info(
+                                    log.debug(
                                         "Message buffered in Redis after delivery failure for client: {}",
                                         envelope.getToClientId()
                                     );
@@ -319,11 +319,11 @@ public class KafkaService implements IKafkaService {
                     log.warn("Could not resolve target node for client {} - ring not initialized or empty", envelope.getToClientId());
                     return Mono.empty();
                 }
-                log.info("Resolved target node {} for client {} using consistent hash", targetFromHash, envelope.getToClientId());
+                log.debug("Resolved target node {} for client {} using consistent hash", targetFromHash, envelope.getToClientId());
                 return Mono.just(targetFromHash);
             }))
             .flatMap(resolvedNodeId -> {
-                log.info(
+                log.debug(
                     "Serializing envelope for relay: msgId={}, from={}, to={}, targetNode={}",
                     envelope.getMsgId(), envelope.getFrom(), envelope.getToClientId(), resolvedNodeId
                 );
@@ -336,7 +336,7 @@ public class KafkaService implements IKafkaService {
                 // Get target node's dedicated topic
                 String targetTopic = getDeliveryTopicForNode(resolvedNodeId);
 
-                log.info("Sending message to node {} on topic {}", resolvedNodeId, targetTopic);
+                log.debug("Sending message to node {} on topic {}", resolvedNodeId, targetTopic);
 
                 // Start Kafka publish latency timer
                 long kafkaStartNanos = System.nanoTime();
@@ -353,7 +353,7 @@ public class KafkaService implements IKafkaService {
                     .doOnNext(result -> {
                         // Record Kafka publish latency
                         metricsService.recordKafkaPublishLatency(kafkaStartNanos);
-                        log.info("Relayed message to node {} (topic {}): msgId={}",
+                        log.debug("Relayed message to node {} (topic {}): msgId={}",
                             resolvedNodeId, targetTopic, envelope.getMsgId()
                         );
                     })

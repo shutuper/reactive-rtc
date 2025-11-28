@@ -10,7 +10,7 @@ scrape_configs:
   - job_name: 'load-balancer'
     metrics_path: '/metrics'
     static_configs:
-      - targets: ['load-balancer:8081']
+      - targets: ['load-balancer:8099']
         labels:
           service: 'load-balancer'
           component: 'control-plane'
@@ -20,8 +20,9 @@ scrape_configs:
     metrics_path: '/metrics'
     static_configs:
       - targets:
-          - 'socket-1:8080'
+          - 'socket-1:8081'
           - 'socket-2:8082'
+          - 'socket-3:8083'
         labels:
           service: 'socket'
           component: 'websocket-server'
@@ -36,7 +37,7 @@ scrape_configs:
   # Kafka Exporter - Consumer Lag & Topic Metrics
   - job_name: 'kafka-exporter'
     metrics_path: '/metrics'
-    scrape_interval: 30s
+    scrape_interval: 20s
     static_configs:
       - targets: ['kafka-exporter:9308']
         labels:

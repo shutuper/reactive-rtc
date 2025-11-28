@@ -59,7 +59,7 @@ public class NodeMetricsService {
      * This is the average over the last 1 minute, showing recent lag from message timestamp to consumption.
      */
     private Mono<Map<String, Double>> getKafkaTopicLagLatencyByNode() {
-        String query = "avg_over_time(rtc_kafka_delivery_topic_lag_latency_seconds_max{job=\"socket-nodes\"}[1m]) * 1000";
+        String query = "(rate(rtc_kafka_delivery_topic_lag_latency_seconds_sum{job=\"socket-nodes\"}[1m]) / rate(rtc_kafka_delivery_topic_lag_latency_seconds_count{job=\"socket-nodes\"}[1m])) * 1000";
         return queryService.query(query)
                 .map(r -> r.getValuesByLabel("node_id"))
                 .doOnNext(values -> log.info("Kafka topic lag latency by node: {}", values));

@@ -83,7 +83,7 @@ public class RingService {
 
         try {
             String targetNode = state.hash.selectNode(clientId);
-            log.info("Resolved client {} to node {}", clientId, targetNode);
+            log.debug("Resolved client {} to node {}", clientId, targetNode);
             return targetNode;
         } catch (IllegalStateException e) {
             log.error("Failed to resolve node for client {}: {}", clientId, e.getMessage());
@@ -128,4 +128,15 @@ public class RingService {
     ) {
     }
 }
+
+
+
+
+
+
+
+
+
+
+
 

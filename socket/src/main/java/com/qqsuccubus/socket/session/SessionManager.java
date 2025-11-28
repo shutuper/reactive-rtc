@@ -5,7 +5,6 @@ import com.qqsuccubus.core.util.JsonUtils;
 import com.qqsuccubus.socket.config.SocketConfig;
 import com.qqsuccubus.socket.metrics.MetricsService;
 import com.qqsuccubus.socket.redis.IRedisService;
-import io.netty.util.internal.PlatformDependent;
 import lombok.Getter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -15,6 +14,7 @@ import reactor.core.publisher.Sinks;
 
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Manages active WebSocket sessions and message delivery (refactored for SOLID).
@@ -41,7 +41,7 @@ public class SessionManager implements ISessionManager {
 	private final MessageBufferService bufferService;
 
 	// Active sessions: clientId -> Session
-	private final Map<String, Session> activeSessions = PlatformDependent.newConcurrentHashMap();
+	private final Map<String, Session> activeSessions = new ConcurrentHashMap<>();
 
 	public SessionManager(IRedisService redisService, SocketConfig config, MetricsService metricsService) {
 		this.redisService = redisService;
@@ -57,17 +57,16 @@ public class SessionManager implements ISessionManager {
 
 		if (resumeOffset > 0) {
 			metricsService.recordResumeSuccess();
-			log.info("Resume verified for user {} at offset {}", clientId, resumeOffset);
+			log.debug("Resume verified for user {} at offset {}", clientId, resumeOffset);
 		}
 
 		// Add to local session map BEFORE Redis save
 		activeSessions.put(clientId, session);
-		log.info("Session added to local map for clientId='{}', map size now={}", clientId, activeSessions.size());
 
 		// Save to Redis
 		return redisService.saveSession(clientId, config.getNodeId(), resumeOffset)
 				.doOnSuccess(v -> {
-					log.info("Session persisted to Redis for user {}, offset={}, nodeId={}",
+					log.debug("Session persisted to Redis for user {}, offset={}, nodeId={}",
 							clientId, resumeOffset, config.getNodeId());
 				})
 				.doOnError(err -> {
@@ -101,7 +100,7 @@ public class SessionManager implements ISessionManager {
 				.then(Mono.just(session.getSink().tryEmitComplete()))
 				.then()
 				.doOnSuccess(v -> {
-					log.info("Session removed for user {}", clientId);
+					log.debug("Session removed for user {}", clientId);
 				});
 	}
 
@@ -111,21 +110,15 @@ public class SessionManager implements ISessionManager {
             metricsService.recordDeliverLocal();
 			String clientId = envelope.getToClientId();
 
-			log.info("Checking activeSessions map: total size={}, contains key '{}'={}",
-					activeSessions.size(), clientId, activeSessions.containsKey(clientId));
-
 			Session session = activeSessions.get(clientId);
-
-			log.info("Attempting to deliver message to clientId='{}', session found={}, active sessions count={}, active session keys={}",
-					clientId, (session != null), activeSessions.size(), activeSessions.keySet());
 
 			if (session == null) {
 				// User not on this node; caller should relay
-				log.info("Session not found for clientId='{}', returning false", clientId);
+				log.debug("Session not found for clientId='{}', returning false", clientId);
 				return Mono.just(false);
 			}
 
-			log.info("Found session for clientId='{}', attempting to emit message msgId={}",
+			log.debug("Found session for clientId='{}', attempting to emit message msgId={}",
 					clientId, envelope.getMsgId());
 
 			// Emit to outbound sink
@@ -139,7 +132,7 @@ public class SessionManager implements ISessionManager {
 				return bufferService.bufferMessage(envelope).then(Mono.just(false));
 			}
 
-			log.info("Successfully emitted message to clientId='{}', msgId={}", clientId, envelope.getMsgId());
+			log.debug("Successfully emitted message to clientId='{}', msgId={}", clientId, envelope.getMsgId());
 			return Mono.just(true);
 		});
 	}
@@ -154,7 +147,7 @@ public class SessionManager implements ISessionManager {
 					// Messages from buffer need offsets assigned for client tracking
 					if (envelope.getOffset() < 0) {
 						// Will be set when emitted through outbound flux
-						log.info("Buffered message {} for client {} will get offset assigned",
+						log.debug("Buffered message {} for client {} will get offset assigned",
 								envelope.getMsgId(), clientId);
 					}
 				});
