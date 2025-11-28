@@ -32,7 +32,7 @@ public class SocketConfig {
                 .perConnBufferSize(Integer.parseInt(getEnv("PER_CONN_BUFFER_SIZE", "100")))
                 .pingInterval(Integer.parseInt(getEnv("PING_INTERVAL", "10")))
                 .idleTimeout(Integer.parseInt(getEnv("IDLE_TIMEOUT", "20")))
-                .useVirtualThreads(Boolean.parseBoolean(getEnv("useVirtualThreads", "true")))
+                .useVirtualThreads(Boolean.parseBoolean(getEnv("USE_VIRTUAL_THREADS", "true")))
                 .build();
     }
 

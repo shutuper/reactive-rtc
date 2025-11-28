@@ -7,6 +7,7 @@ import com.qqsuccubus.core.util.BytesUtils;
 import com.qqsuccubus.core.util.JsonUtils;
 import com.qqsuccubus.socket.config.SocketConfig;
 import com.qqsuccubus.socket.metrics.MetricsService;
+import com.qqsuccubus.socket.redistribution.RedistributionService;
 import com.qqsuccubus.socket.ring.RingService;
 import com.qqsuccubus.socket.session.ISessionManager;
 import com.qqsuccubus.socket.session.MessageBufferService;
@@ -42,6 +43,7 @@ public class KafkaService implements IKafkaService {
     private final MetricsService metricsService;
     private final MessageBufferService bufferService;
     private final RingService ringService;
+    private final RedistributionService redistributionService;
 
     private final KafkaSender<String, String> sender;
     private final AdminClient adminClient;
@@ -61,6 +63,7 @@ public class KafkaService implements IKafkaService {
         this.metricsService = metricsService;
         this.bufferService = bufferService;
         this.ringService = ringService;
+        this.redistributionService = new RedistributionService(config, sessionManager, ringService);
 
         // Setup producer
         Map<String, Object> producerProps = new HashMap<>();
@@ -140,9 +143,11 @@ public class KafkaService implements IKafkaService {
                 // Consumer for CONTROL_RING
                 Map<String, Object> controlConsumerProps = new HashMap<>();
                 controlConsumerProps.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, config.getKafkaBootstrap());
+                controlConsumerProps.put(ConsumerConfig.GROUP_ID_CONFIG, "socket-control-" + currentNodeId);
                 controlConsumerProps.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class);
                 controlConsumerProps.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class);
                 controlConsumerProps.put(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "latest");
+                controlConsumerProps.put(ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG, "false");
 
                 ReceiverOptions<String, String> controlReceiverOptions = ReceiverOptions.<String, String>create(
                     controlConsumerProps
@@ -178,6 +183,13 @@ public class KafkaService implements IKafkaService {
                     ringService.updateRing(ringUpdate);
 
                     record.receiverOffset().acknowledge();
+
+                    // Start gradual client redistribution
+                    String redistributionReason = String.format("Ring update v%d: %s",
+                        ringUpdate.getVersion().getVersion(), ringUpdate.getReason()
+                    );
+                    redistributionService.startRedistribution(redistributionReason);
+
                     return Mono.empty();
                 } catch (Exception e) {
                     log.error("Failed to process ring update", e);
@@ -418,11 +430,12 @@ public class KafkaService implements IKafkaService {
     }
 
     /**
-     * Stops Kafka consumers, producer, and admin client.
+     * Stops Kafka consumers, producer, admin client, and redistribution service.
      *
      * @return Mono completing when stopped
      */
     public Mono<Void> stop() {
+        redistributionService.stop();
         sender.close();
         adminClient.close();
         log.info("Kafka service stopped");

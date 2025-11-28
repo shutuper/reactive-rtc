@@ -18,6 +18,9 @@ public class LoadBalancerApp {
     private static final Logger log = LoggerFactory.getLogger(LoadBalancerApp.class);
 
     public static void main(String[] args) {
+        // Set virtual threads property BEFORE any config loading to ensure it's set early
+        System.setProperty("reactor.schedulers.defaultBoundedElasticOnVirtualThreads", "true");
+
         LBConfig config = LBConfig.fromEnv();
 
         log.info("Starting Load-Balancer");

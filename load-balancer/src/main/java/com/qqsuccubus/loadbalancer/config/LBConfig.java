@@ -33,6 +33,9 @@ public class LBConfig {
     String prometheusHost;
     int prometheusPort;
 
+    // Virtual Threads configuration
+    boolean useVirtualThreads;
+
     public static LBConfig fromEnv() {
         return LBConfig.builder()
             .nodeId(getEnv("NODE_ID", "lb-node-1"))
@@ -49,6 +52,7 @@ public class LBConfig {
             .heartbeatGrace(Duration.ofSeconds(Integer.parseInt(getEnv("HEARTBEAT_GRACE_SEC", "90"))))
             .prometheusHost(getEnv("PROMETHEUS_HOST", "prometheus"))
             .prometheusPort(Integer.parseInt(getEnv("PROMETHEUS_PORT", "9090")))
+            .useVirtualThreads(Boolean.parseBoolean(getEnv("USE_VIRTUAL_THREADS", "true")))
             .build();
     }
 

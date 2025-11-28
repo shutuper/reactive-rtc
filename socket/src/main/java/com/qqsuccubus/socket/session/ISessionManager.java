@@ -4,6 +4,8 @@ import com.qqsuccubus.core.msg.Envelope;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
+import java.util.Set;
+
 /**
  * Interface for session management (Dependency Inversion Principle).
  * <p>
@@ -53,6 +55,13 @@ public interface ISessionManager {
      * @return Mono completing when all sessions drained
      */
     Mono<Void> drainAll();
+
+    /**
+     * Gets all active client IDs.
+     *
+     * @return Set of active client IDs
+     */
+    Set<String> getActiveClientIds();
 
 }
 

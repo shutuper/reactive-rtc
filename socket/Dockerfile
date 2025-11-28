@@ -1,5 +1,5 @@
 # Multi-stage build for Socket module
-FROM maven:3.9-eclipse-temurin-21 AS build
+FROM maven:3.9-eclipse-temurin-21-alpine AS build
 
 WORKDIR /workspace
 
@@ -18,8 +18,8 @@ COPY socket/src socket/src
 # Build with Maven
 RUN mvn clean package -DskipTests
 
-# Runtime stage
-FROM eclipse-temurin:21-jre
+# Runtime stage - Use full JDK for Virtual Threads support (non-Alpine for better compatibility)
+FROM eclipse-temurin:21-jre-alpine
 
 WORKDIR /app
 
@@ -33,6 +33,10 @@ EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=3s --start-period=10s --retries=3 \
     CMD curl -f http://localhost:8080/healthz || exit 1
 
-# Run the application
-ENTRYPOINT ["java", "-XX:+UseZGC", "-XX:MaxRAMPercentage=75.0", "-jar", "app.jar"]
+# Run the application with Virtual Threads enabled
+ENTRYPOINT ["java", \
+    "-XX:+UseZGC", \
+    "-XX:MaxRAMPercentage=75.0", \
+    "-Dreactor.schedulers.defaultBoundedElasticOnVirtualThreads=true", \
+    "-jar", "app.jar"]
 

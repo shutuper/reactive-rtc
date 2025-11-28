@@ -14,6 +14,7 @@ import reactor.core.publisher.Mono;
 import reactor.core.publisher.Sinks;
 
 import java.util.Map;
+import java.util.Set;
 
 /**
  * Manages active WebSocket sessions and message delivery (refactored for SOLID).
@@ -165,6 +166,11 @@ public class SessionManager implements ISessionManager {
 		return Flux.fromIterable(activeSessions.keySet())
 				.flatMap(this::removeSession)
 				.then();
+	}
+
+	@Override
+	public Set<String> getActiveClientIds() {
+		return activeSessions.keySet();
 	}
 
 }

@@ -91,8 +91,9 @@ services:
       MPS_PER_POD: 2500
       PROMETHEUS_HOST: prometheus
       PROMETHEUS_PORT: 9090
+      USE_VIRTUAL_THREADS: "true"
     ports:
-      - "8081:8081"
+      - "8080:8080"
 
   # Socket Node 1
   socket-1:
@@ -109,7 +110,7 @@ services:
         condition: service_started
     environment:
       NODE_ID: socket-node-1
-      PUBLIC_WS_URL: ws://localhost:8080/ws
+      PUBLIC_WS_URL: ws://localhost:8081/ws
       HTTP_PORT: 8080
       KAFKA_BOOTSTRAP: kafka:9092
       REDIS_URL: redis://redis:6379
@@ -119,9 +120,10 @@ services:
       HANDSHAKE_RATE_LIMIT: 100
       PER_CONN_BUFFER_SIZE: 256
       HEARTBEAT_INTERVAL_SEC: 30
-      LOAD_BALANCER_URL: http://load-balancer:8081
+      LOAD_BALANCER_URL: http://load-balancer:8080
+      USE_VIRTUAL_THREADS: "true"
     ports:
-      - "8080:8080"
+      - "8081:8081"
 
   # Socket Node 2
   socket-2:
@@ -148,9 +150,40 @@ services:
       HANDSHAKE_RATE_LIMIT: 100
       PER_CONN_BUFFER_SIZE: 256
       HEARTBEAT_INTERVAL_SEC: 30
-      LOAD_BALANCER_URL: http://load-balancer:8081
+      LOAD_BALANCER_URL: http://load-balancer:8080
+      USE_VIRTUAL_THREADS: "true"
     ports:
       - "8082:8082"
+
+  # Socket Node 3
+  socket-3:
+    build:
+      context: .
+      dockerfile: socket/Dockerfile
+    container_name: socket-3
+    depends_on:
+      kafka:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      load-balancer:
+        condition: service_started
+    environment:
+      NODE_ID: socket-node-3
+      PUBLIC_WS_URL: ws://localhost:8083/ws
+      HTTP_PORT: 8082
+      KAFKA_BOOTSTRAP: kafka:9092
+      REDIS_URL: redis://redis:6379
+      RING_SECRET: "my-secret-key-for-demo"
+      BUFFER_MAX: 100
+      RESUME_TTL_SEC: 3600
+      HANDSHAKE_RATE_LIMIT: 100
+      PER_CONN_BUFFER_SIZE: 256
+      HEARTBEAT_INTERVAL_SEC: 30
+      LOAD_BALANCER_URL: http://load-balancer:8080
+      USE_VIRTUAL_THREADS: "true"
+    ports:
+      - "8083:8083"
 
 volumes:
   zookeeper-data:
