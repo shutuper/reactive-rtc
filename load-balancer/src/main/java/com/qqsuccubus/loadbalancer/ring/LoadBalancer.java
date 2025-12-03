@@ -6,22 +6,34 @@ import com.qqsuccubus.core.metrics.MetricsNames;
 import com.qqsuccubus.core.model.DistributionVersion;
 import com.qqsuccubus.core.model.Heartbeat;
 import com.qqsuccubus.core.msg.ControlMessages;
+import com.qqsuccubus.core.msg.Envelope;
+import com.qqsuccubus.core.msg.Topics;
+import com.qqsuccubus.core.util.JsonUtils;
 import com.qqsuccubus.loadbalancer.config.LBConfig;
-import com.qqsuccubus.loadbalancer.kafka.IRingPublisher;
+import com.qqsuccubus.loadbalancer.k8s.LeaderElectionService;
+import com.qqsuccubus.loadbalancer.k8s.PodDeletionCostService;
+import com.qqsuccubus.loadbalancer.k8s.SocketNodeScalerService;
+import com.qqsuccubus.loadbalancer.kafka.IKafkaService;
+import com.qqsuccubus.loadbalancer.kafka.RemovedNodeMessageForwarder;
 import com.qqsuccubus.loadbalancer.metrics.NodeMetrics;
 import com.qqsuccubus.loadbalancer.metrics.NodeMetricsService;
 import com.qqsuccubus.loadbalancer.redis.IRedisService;
 import io.micrometer.core.instrument.Gauge;
 import io.micrometer.core.instrument.MeterRegistry;
-import io.netty.util.internal.PlatformDependent;
+import org.apache.kafka.clients.consumer.ConsumerConfig;
+import org.apache.kafka.common.serialization.StringDeserializer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
+import reactor.core.scheduler.Schedulers;
+import reactor.kafka.receiver.KafkaReceiver;
+import reactor.kafka.receiver.ReceiverOptions;
 
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.Collectors;
@@ -30,13 +42,17 @@ public class LoadBalancer implements ILoadBalancer {
     private static final Logger log = LoggerFactory.getLogger(LoadBalancer.class);
 
     private final AtomicLong versionCounter = new AtomicLong(1);
-    private final IRingPublisher kafkaPublisher;
+    private final IKafkaService kafkaPublisher;
     private final NodeMetricsService nodeMetricsService;
     private final IRedisService redisService;
     private final LBConfig config;
+    private final LeaderElectionService leaderElectionService;
+    private final PodDeletionCostService podDeletionCostService;
+    private final SocketNodeScalerService socketNodeScalerService;
+    private final RemovedNodeMessageForwarder removedNodeMessageForwarder;
 
     // Node registry: nodeId -> (descriptor, lastHeartbeat)
-    private final Map<String, NodeEntry> nodeRegistry = PlatformDependent.newConcurrentHashMap();
+    private final Map<String, NodeEntry> nodeRegistry = new ConcurrentHashMap<>();
 
     // Current ring and version
     private volatile SkeletonWeightedRendezvousHash currentHash;
@@ -60,22 +76,162 @@ public class LoadBalancer implements ILoadBalancer {
     private static final int MAX_SCALE_OUT_COUNT = 5; // Max nodes to add at once
 
     public LoadBalancer(LBConfig config,
-                        IRingPublisher kafkaPublisher,
+                        IKafkaService kafkaPublisher,
                         IRedisService redisService,
                         MeterRegistry meterRegistry,
-                        NodeMetricsService nodeMetricsService) {
+                        NodeMetricsService nodeMetricsService,
+                        LeaderElectionService leaderElectionService,
+                        PodDeletionCostService podDeletionCostService,
+                        SocketNodeScalerService socketNodeScalerService) {
         this.kafkaPublisher = kafkaPublisher;
         this.config = config;
         this.redisService = redisService;
         this.nodeMetricsService = nodeMetricsService;
+        this.leaderElectionService = leaderElectionService;
+        this.podDeletionCostService = podDeletionCostService;
+        this.socketNodeScalerService = socketNodeScalerService;
 
-        // Initialize empty ring
+        // Initialize empty ring (will be populated from Redis if available)
         this.currentHash = new SkeletonWeightedRendezvousHash(Collections.emptyMap());
         this.currentVersion = createVersion();
+
+        // Try to load existing ring from Redis (for non-leader instances)
+        initializeRingFromRedis();
+
+        // Initialize message forwarder for removed nodes
+        // Uses consistent hash to resolve clientId -> new nodeId
+        this.removedNodeMessageForwarder = new RemovedNodeMessageForwarder(
+            config, redisService, clientId -> this.currentHash.selectNode(clientId)
+        );
+
+        this.kafkaPublisher.createTopicIfNotExists(Topics.FORWARD_VIA_LB, 2, (short) 1)
+            .publishOn(Schedulers.boundedElastic())
+            .doOnSuccess(v -> handleForwardedMessages(config, kafkaPublisher))
+            .subscribe();
+
+        // Subscribe to ring updates from Kafka (for all instances, including non-leaders)
+        // This ensures all load-balancer instances have an up-to-date ring for routing
+        subscribeToRingUpdates();
 
         // Metrics
         Gauge.builder(MetricsNames.LB_RING_NODES, this, r -> r.nodeRegistry.size())
             .register(meterRegistry);
+    }
+
+    /**
+     * Subscribes to ring updates from Kafka.
+     * All load-balancer instances (leader and non-leader) subscribe to keep their ring in sync.
+     * This enables non-leader instances to route requests correctly.
+     */
+    private void subscribeToRingUpdates() {
+        Map<String, Object> ringConsumerProps = new HashMap<>();
+        ringConsumerProps.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, config.getKafkaBootstrap());
+        // Use unique group ID per instance so each instance receives all updates
+        ringConsumerProps.put(ConsumerConfig.GROUP_ID_CONFIG, "lb-ring-" + config.getNodeId());
+        ringConsumerProps.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class);
+        ringConsumerProps.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class);
+        ringConsumerProps.put(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "latest");
+        ringConsumerProps.put(ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG, "true");
+
+        ReceiverOptions<String, String> ringReceiverOptions = ReceiverOptions.<String, String>create(
+            ringConsumerProps
+        ).subscription(Collections.singleton(Topics.CONTROL_RING));
+
+        KafkaReceiver.create(ringReceiverOptions).receive()
+            .doOnNext(record -> {
+                try {
+                    ControlMessages.RingUpdate ringUpdate = JsonUtils.readValue(
+                        record.value(), ControlMessages.RingUpdate.class
+                    );
+                    
+                    if (ringUpdate != null && ringUpdate.getNodeWeights() != null) {
+                        applyRingUpdate(ringUpdate);
+                    }
+                    
+                    record.receiverOffset().acknowledge();
+                } catch (Exception e) {
+                    log.error("Failed to process ring update from Kafka", e);
+                }
+            })
+            .subscribe(
+                null,
+                err -> log.error("Error in ring update subscription", err),
+                () -> log.info("Ring update subscription completed")
+            );
+        
+        log.info("Subscribed to ring updates on topic {}", Topics.CONTROL_RING);
+    }
+
+    /**
+     * Applies a ring update received from Kafka.
+     * Updates the local hash and node registry.
+     */
+    private void applyRingUpdate(ControlMessages.RingUpdate ringUpdate) {
+        Map<String, Integer> nodeWeights = ringUpdate.getNodeWeights();
+        
+        // Skip if this is an older version than what we have
+        if (currentVersion != null && ringUpdate.getVersion() != null 
+            && ringUpdate.getVersion().getVersion() <= currentVersion.getVersion()) {
+            log.debug("Skipping ring update v{} (current: v{})", 
+                ringUpdate.getVersion().getVersion(), currentVersion.getVersion());
+            return;
+        }
+
+        // Update the hash
+        this.currentHash = new SkeletonWeightedRendezvousHash(nodeWeights);
+        this.currentVersion = ringUpdate.getVersion();
+
+        // Update node registry with minimal entries for routing
+        // Keep existing entries if they have heartbeat data, otherwise create minimal ones
+        Set<String> newNodes = new HashSet<>(nodeWeights.keySet());
+        Set<String> removedNodes = new HashSet<>(nodeRegistry.keySet());
+        removedNodes.removeAll(newNodes);
+
+        // Remove nodes that are no longer in the ring
+        removedNodes.forEach(nodeRegistry::remove);
+
+        // Add/update nodes
+        nodeWeights.forEach((nodeId, weight) -> {
+            NodeEntry existing = nodeRegistry.get(nodeId);
+            if (existing == null) {
+                // New node - create minimal entry
+                nodeRegistry.put(nodeId, new NodeEntry(nodeId, weight, null));
+            } else if (existing.weight() != weight) {
+                // Weight changed - update entry
+                nodeRegistry.put(nodeId, new NodeEntry(nodeId, weight, existing.lastHeartbeat()));
+            }
+        });
+
+        log.info("Applied ring update from Kafka: version={}, nodes={}, reason={}",
+            ringUpdate.getVersion().getVersion(), nodeWeights.size(), ringUpdate.getReason());
+    }
+
+    private void handleForwardedMessages(LBConfig config, IKafkaService kafkaPublisher) {
+        // Consumer for this node's delivery topic
+        Map<String, Object> forwarderConsumerProps = new HashMap<>();
+        forwarderConsumerProps.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, config.getKafkaBootstrap());
+        forwarderConsumerProps.put(ConsumerConfig.GROUP_ID_CONFIG, "lb-forwarder");
+        forwarderConsumerProps.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class);
+        forwarderConsumerProps.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class);
+        forwarderConsumerProps.put(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest");
+        forwarderConsumerProps.put(ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG, "false");
+
+        ReceiverOptions<String, String> forwarderReceiverOptions = ReceiverOptions.<String, String>create(
+            forwarderConsumerProps
+        ).subscription(Collections.singleton(Topics.FORWARD_VIA_LB));  // Subscribe to node-specific topic
+
+        KafkaReceiver.create(forwarderReceiverOptions).receive().flatMap(record -> {
+            // Start latency timer for relay delivery
+            // Record inbound Kafka traffic
+            String messageValue = record.value();
+
+//                        metricsService.recordNetworkInboundKafka(BytesUtils.getBytesLength(messageValue)); todo
+
+            Envelope envelope = JsonUtils.readValue(messageValue, Envelope.class);
+//                        metricsService.recordKafkaDeliveryTopicLatency(envelope.getTs()); todo
+
+            return kafkaPublisher.forwardMessage(envelope, this.currentHash.selectNode(envelope.getToClientId()));
+        }).subscribe();
     }
 
 
@@ -95,6 +251,20 @@ public class LoadBalancer implements ILoadBalancer {
             .filter(node -> !activeNodes.contains(node))
             .collect(Collectors.toSet());
 
+        if (!removedNodes.isEmpty()) {
+            // Start forwarding messages from removed nodes' topics to new target nodes
+            // This ensures no messages are lost during node removal (scale-in, crash, drain)
+            // Forwarding continues for 5 minutes to handle in-flight messages
+            log.info("Starting message forwarding for {} removed nodes: {}",
+                removedNodes.size(), removedNodes);
+            removedNodeMessageForwarder.startForwarding(removedNodes);
+        }
+
+        // Check if this node is the leader
+        if (leaderElectionService != null && !leaderElectionService.isLeader()) {
+            log.debug("Not the leader, skipping heartbeat processing");
+            return Flux.empty();
+        }
 
         boolean topologyChanged = !removedNodes.isEmpty() || !newNodes.isEmpty();
 
@@ -223,7 +393,7 @@ public class LoadBalancer implements ILoadBalancer {
 
         log.info("Scale decision metrics: avgCpu={}, avgMem={}, avgMps={}, avgConn={}, avgLatency={}ms, avgKafkaLag={}ms",
             String.format("%.1f%%", avgCpu * 100), String.format("%.1f%%", avgMem * 100),
-            String.format("%.2f", avgMps), String.format("%.0f", avgConnections), 
+            String.format("%.2f", avgMps), String.format("%.0f", avgConnections),
             String.format("%.2f", avgLatencyMs), String.format("%.2f", avgKafkaLagMs));
 
         // ========== SCALE OUT CONDITIONS ==========
@@ -675,12 +845,12 @@ public class LoadBalancer implements ILoadBalancer {
 
         int numNodes = entries.size();
         int targetTotalWeight = WEIGHT_PER_NODE * numNodes;
-        
+
         // Check if we have valid metrics - if all nodes have 0 CPU/Memory, metrics aren't available yet
         boolean hasValidMetrics = entries.stream()
-            .anyMatch(e -> e.lastHeartbeat.getCpu() > 0.0 || e.lastHeartbeat.getMem() > 0.0 
-                || e.lastHeartbeat.getActiveConn() > 0 || e.lastHeartbeat.getP95LatencyMs() > 0.0);
-        
+            .anyMatch(e -> e.lastHeartbeat.getCpu() > 0.0 || e.lastHeartbeat.getMem() > 0.0
+                           || e.lastHeartbeat.getActiveConn() > 0 || e.lastHeartbeat.getP95LatencyMs() > 0.0);
+
         // If no valid metrics, assign equal weights to all nodes
         if (!hasValidMetrics) {
             log.info("No valid metrics available yet - assigning equal weights to all nodes");
@@ -693,15 +863,15 @@ public class LoadBalancer implements ILoadBalancer {
             String lastNode = entries.get(entries.size() - 1).nodeId;
             int remainder = targetTotalWeight - (weightPerNode * (numNodes - 1));
             equalWeights.put(lastNode, remainder);
-            
+
             log.info("Calculated node weights (equal distribution): {}", equalWeights);
             return equalWeights;
         }
-        
+
         double maxp95 = entries.stream().mapToDouble(x -> x.lastHeartbeat.getP95LatencyMs()).max().orElse(1d);
         double maxKafkaLag = entries.stream().mapToDouble(x -> x.lastHeartbeat.getKafkaTopicLagLatencyMs()).max().orElse(1d);
         double maxActiveConn = entries.stream().mapToDouble(x -> x.lastHeartbeat.getActiveConn()).max().orElse(1d);
-        
+
         // Avoid division by zero
         if (maxp95 <= 0.0) maxp95 = 1.0;
         if (maxKafkaLag <= 0.0) maxKafkaLag = 1.0;
@@ -728,14 +898,14 @@ public class LoadBalancer implements ILoadBalancer {
             double connScore = Math.min(hb.getActiveConn() / maxActiveConn, 1.0) * 0.05;
 
             double totalScore = cpuScore + memScore + latencyScore + kafkaLagScore + connScore;
-            
+
             // Defensive check (should not happen now)
             if (Double.isNaN(totalScore) || Double.isInfinite(totalScore)) {
-                log.warn("Unexpected invalid load score for {}: cpu={}, mem={}, latency={}, kafkaLag={}, conn={}, total={}. Using default.", 
+                log.warn("Unexpected invalid load score for {}: cpu={}, mem={}, latency={}, kafkaLag={}, conn={}, total={}. Using default.",
                     entry.nodeId, cpuScore, memScore, latencyScore, kafkaLagScore, connScore, totalScore);
                 totalScore = 0.5;
             }
-            
+
             loadScores.put(entry.nodeId, totalScore);
         }
 
@@ -835,13 +1005,42 @@ public class LoadBalancer implements ILoadBalancer {
 
         log.info("Publishing scaling signal: {}", reason);
 
+        // Before scale-in, update pod deletion costs
+        Mono<Void> updateDeletionCosts = Mono.empty();
+        if (scaleCount < 0 && podDeletionCostService != null) {
+            updateDeletionCosts = updatePodDeletionCost(entries);
+        }
+
         ControlMessages.ScaleSignal scaleSignal = ControlMessages.ScaleSignal.builder()
-            .reason(reason)
             .ts(System.currentTimeMillis())
+            .reason(reason)
             .build();
 
-        return kafkaPublisher.publishScaleSignal(scaleSignal)
+        // Scale the StatefulSet directly based on the intelligent decision
+        Mono<Void> scaleSocketNodes = Mono.empty();
+        if (socketNodeScalerService != null) {
+            scaleSocketNodes = socketNodeScalerService.scaleSocketNodes(scaleCount, reason);
+        }
+
+        return updateDeletionCosts
+            .then(scaleSocketNodes)
+            .then(kafkaPublisher.publishScaleSignal(scaleSignal))
             .doOnError(err -> log.error("Failed to publish scaling signal: {}", err.getMessage()));
+    }
+
+    private Mono<Void> updatePodDeletionCost(List<NodeEntry> entries) {
+        // Build map of nodeId -> activeConnections for deletion cost calculation
+        Map<String, Integer> nodeConnectionCounts = entries.stream()
+            .min(Comparator.comparingInt(node -> node.lastHeartbeat.getActiveConn()))
+            .map(node -> Map.of(node.nodeId, node.lastHeartbeat.getActiveConn()))
+            .orElse(Collections.emptyMap());
+
+        return podDeletionCostService.updatePodDeletionCosts(nodeConnectionCounts)
+            .doOnSuccess(v -> log.info(
+                "Updated pod deletion costs before scale-in: {}",
+                podDeletionCostService.getNodesSortedByDeletionCost(nodeConnectionCounts)
+            ))
+            .doOnError(err -> log.error("Failed to update pod deletion costs: {}", err.getMessage()));
     }
 
     /**
@@ -851,13 +1050,22 @@ public class LoadBalancer implements ILoadBalancer {
      * @return NodeDescriptor, or null if ring is empty
      */
     public NodeEntry resolveNode(String clientId) {
-        if (nodeRegistry.isEmpty()) {
-            return null;
-        }
-
         try {
             String nodeId = currentHash.selectNode(clientId);
-            return nodeRegistry.get(nodeId);
+            
+            // Try to get from registry first (has full heartbeat data)
+            NodeEntry entry = nodeRegistry.get(nodeId);
+            if (entry != null) {
+                return entry;
+            }
+            
+            // If not in registry (non-leader instance), create a minimal entry
+            // This allows non-leader instances to route requests using the hash
+            if (nodeId != null && !nodeId.isEmpty()) {
+                return new NodeEntry(nodeId, 100, null);
+            }
+            
+            return null;
         } catch (IllegalStateException e) {
             log.error("Failed to select node for userId {}: {}", clientId, e.getMessage());
             return null;
@@ -921,7 +1129,56 @@ public class LoadBalancer implements ILoadBalancer {
     }
 
     /**
-     * Node entry with descriptor and last-seen timestamp.
+     * Initializes the ring from Redis if available.
+     * This allows non-leader instances to serve requests immediately.
+     */
+    private void initializeRingFromRedis() {
+        try {
+            ControlMessages.RingUpdate ringUpdate = redisService.getCurrentRingVersion().block();
+            if (ringUpdate != null && ringUpdate.getNodeWeights() != null && !ringUpdate.getNodeWeights().isEmpty()) {
+                Map<String, Integer> nodeWeights = ringUpdate.getNodeWeights();
+                this.currentHash = new SkeletonWeightedRendezvousHash(nodeWeights);
+                this.currentVersion = ringUpdate.getVersion();
+                
+                // Populate nodeRegistry with minimal entries for routing
+                nodeWeights.forEach((nodeId, weight) -> {
+                    nodeRegistry.put(nodeId, new NodeEntry(nodeId, weight, null));
+                });
+                
+                log.info("Initialized ring from Redis: version={}, nodes={}", 
+                    currentVersion.getVersion(), nodeWeights.size());
+            } else {
+                log.info("No existing ring in Redis, starting with empty ring");
+            }
+        } catch (Exception e) {
+            log.warn("Failed to initialize ring from Redis: {}", e.getMessage());
+        }
+    }
+
+    /**
+     * Stops the load balancer and cleans up resources.
+     */
+    public void stop() {
+        log.info("Stopping LoadBalancer...");
+
+        if (removedNodeMessageForwarder != null) {
+            removedNodeMessageForwarder.stopAll();
+        }
+
+        log.info("LoadBalancer stopped");
+    }
+
+    /**
+     * Gets the removed node message forwarder for monitoring.
+     *
+     * @return RemovedNodeMessageForwarder instance
+     */
+    public RemovedNodeMessageForwarder getRemovedNodeMessageForwarder() {
+        return removedNodeMessageForwarder;
+    }
+
+    /**
+     * Node entry with descriptor, weight, and heartbeat data.
      */
     public record NodeEntry(String nodeId,
                             int weight,

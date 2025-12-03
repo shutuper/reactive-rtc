@@ -75,7 +75,7 @@ public class WebSocketHandler {
 		MDC.put("clientId", clientId);
 		log.debug("WebSocket handshake for client {} (resume={})", clientId, resumeOffset);
 		// Create session
-		return sessionManager.createSession(clientId, resumeOffset)
+        return sessionManager.createSession(clientId, resumeOffset, outbound)
 				.flatMap(session -> {
 					handleConnectionStateUpdates(inbound, outbound, clientId);
 

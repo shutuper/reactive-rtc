@@ -1,8 +1,9 @@
 package com.qqsuccubus.loadbalancer.ring;
 
 import com.qqsuccubus.core.msg.ControlMessages;
+import com.qqsuccubus.core.msg.Envelope;
 import com.qqsuccubus.loadbalancer.config.LBConfig;
-import com.qqsuccubus.loadbalancer.kafka.IRingPublisher;
+import com.qqsuccubus.loadbalancer.kafka.IKafkaService;
 import com.qqsuccubus.loadbalancer.metrics.NodeMetrics;
 import com.qqsuccubus.loadbalancer.metrics.NodeMetricsService;
 import com.qqsuccubus.loadbalancer.redis.IRedisService;
@@ -14,7 +15,6 @@ import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.test.StepVerifier;
 
-import javax.imageio.ImageReader;
 import java.time.Duration;
 import java.util.*;
 import java.util.concurrent.atomic.AtomicReference;
@@ -29,7 +29,7 @@ class LoadBalancerIntegrationTest {
 
     private LoadBalancer loadBalancer;
     private TestRedisService redisService;
-    private TestRingPublisher testPublisher;
+    private TestKafkaService testPublisher;
     private TestMetricsService testMetricsService;
     private SimpleMeterRegistry meterRegistry;
 
@@ -52,12 +52,12 @@ class LoadBalancerIntegrationTest {
             .prometheusPort(9090)
             .build();
 
-        testPublisher = new TestRingPublisher();
+        testPublisher = new TestKafkaService();
         testMetricsService = new TestMetricsService();
         testMetricsService = new TestMetricsService();
         meterRegistry = new SimpleMeterRegistry();
 
-        loadBalancer = new LoadBalancer(config, testPublisher, redisService, meterRegistry, testMetricsService);
+        loadBalancer = new LoadBalancer(config, testPublisher, redisService, meterRegistry, testMetricsService, null, null, null);
     }
 
     // ========== Weight Calculation Tests ==========
@@ -1465,7 +1465,7 @@ class LoadBalancerIntegrationTest {
     /**
      * Test implementation of IRingPublisher that captures published messages
      */
-    static class TestRingPublisher implements IRingPublisher {
+    static class TestKafkaService implements IKafkaService {
         boolean ringUpdatePublished = false;
         boolean scaleSignalPublished = false;
         ControlMessages.RingUpdate lastRingUpdate;
@@ -1486,8 +1486,13 @@ class LoadBalancerIntegrationTest {
         }
 
         @Override
-        public Mono<Void> publishDrainSignal(ControlMessages.DrainSignal drainSignal) {
-            return Mono.empty();
+        public Mono<Void> forwardMessage(Envelope envelope, String targetNodeId) {
+            return null;
+        }
+
+        @Override
+        public Mono<Void> createTopicIfNotExists(String topicName, int partitions, short replicationFactor) {
+            return null;
         }
 
         @Override
@@ -1533,8 +1538,18 @@ class LoadBalancerIntegrationTest {
         }
 
         @Override
+        public Mono<ControlMessages.RingUpdate> getCurrentRingVersion() {
+            return Mono.empty();
+        }
+
+        @Override
         public Flux<List<String>> subscribeToHeartbeats() {
             return Flux.empty();
+        }
+
+        @Override
+        public Mono<String> getClientTargetNodeId(String clientId) {
+            return Mono.empty();
         }
 
         @Override

@@ -1,6 +1,7 @@
 package com.qqsuccubus.socket;
 
 import com.qqsuccubus.socket.config.SocketConfig;
+import com.qqsuccubus.socket.drain.DrainService;
 import com.qqsuccubus.socket.http.HttpServer;
 import com.qqsuccubus.socket.kafka.KafkaService;
 import com.qqsuccubus.socket.metrics.MetricsService;
@@ -49,6 +50,9 @@ public class SocketApp {
             config, sessionManager, metricsService, sessionManager.getBufferService(), ringService
         );
 
+        // Initialize drain service for graceful shutdown
+        DrainService drainService = new DrainService(sessionManager);
+
         // Start Kafka consumers (block until initialized)
         kafkaService.start().block();
 
@@ -58,7 +62,8 @@ public class SocketApp {
             sessionManager,
             kafkaService,
             metricsService,
-            metricsExporter
+            metricsExporter,
+            drainService
         );
 
         DisposableServer disposableServer = httpServer.start();
@@ -66,7 +71,7 @@ public class SocketApp {
         Disposable heartbeats = redisService.startHeartbeats();
         log.info("Socket node {} is ready", config.getNodeId());
 
-        handleShutdown(config, sessionManager, kafkaService, httpServer, redisService, heartbeats);
+        handleShutdown(config, sessionManager, kafkaService, httpServer, redisService, heartbeats, drainService);
 
         disposableServer.onDispose().block();
     }
@@ -76,7 +81,8 @@ public class SocketApp {
                                        KafkaService kafkaService,
                                        HttpServer httpServer,
                                        RedisService redisService,
-                                       Disposable heartbeats) {
+                                       Disposable heartbeats,
+                                       DrainService drainService) {
         // Graceful shutdown hook
         Runtime.getRuntime().addShutdownHook(new Thread(() -> {
             log.info("Shutdown signal received, initiating graceful shutdown...");
@@ -92,6 +98,9 @@ public class SocketApp {
 
             // Drain connections
             sessionManager.drainAll().block(Duration.ofSeconds(30));
+
+            // Stop drain service
+            drainService.stop();
 
             // Close Redis
             redisService.close();

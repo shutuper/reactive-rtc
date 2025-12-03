@@ -1,4 +1,5 @@
 ---
+# Load-Balancer Deployment
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -6,8 +7,10 @@ metadata:
   namespace: rtc
   labels:
     app: load-balancer
+    app.kubernetes.io/name: load-balancer
+    app.kubernetes.io/part-of: reactive-rtc
 spec:
-  replicas: 2
+  replicas: 1  # Default 1, HPA will scale to 5
   selector:
     matchLabels:
       app: load-balancer
@@ -20,7 +23,9 @@ spec:
         prometheus.io/port: "8081"
         prometheus.io/path: "/metrics"
     spec:
+      serviceAccountName: load-balancer-sa
       affinity:
+        # Spread pods across nodes for high availability
         podAntiAffinity:
           preferredDuringSchedulingIgnoredDuringExecution:
             - weight: 100
@@ -31,13 +36,17 @@ spec:
                 topologyKey: kubernetes.io/hostname
       containers:
         - name: load-balancer
-          image: your-registry/reactive-rtc-load-balancer:latest
-          imagePullPolicy: IfNotPresent
+          image: local/reactive-rtc-load-balancer:latest
+          imagePullPolicy: Never
           ports:
             - containerPort: 8081
               name: http
               protocol: TCP
           env:
+            - name: NODE_ID
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
             - name: HTTP_PORT
               value: "8081"
             - name: KAFKA_BOOTSTRAP
@@ -45,6 +54,36 @@ spec:
                 configMapKeyRef:
                   name: rtc-config
                   key: KAFKA_BOOTSTRAP
+            - name: REDIS_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: rtc-config
+                  key: REDIS_URL
+            - name: KUBERNETES_NAMESPACE
+              valueFrom:
+                configMapKeyRef:
+                  name: rtc-config
+                  key: KUBERNETES_NAMESPACE
+            - name: ENABLE_LEADER_ELECTION
+              valueFrom:
+                configMapKeyRef:
+                  name: rtc-config
+                  key: ENABLE_LEADER_ELECTION
+            - name: SOCKET_WORKLOAD_NAME
+              valueFrom:
+                configMapKeyRef:
+                  name: rtc-config
+                  key: SOCKET_WORKLOAD_NAME
+            - name: SOCKET_MIN_REPLICAS
+              valueFrom:
+                configMapKeyRef:
+                  name: rtc-config
+                  key: SOCKET_MIN_REPLICAS
+            - name: SOCKET_MAX_REPLICAS
+              valueFrom:
+                configMapKeyRef:
+                  name: rtc-config
+                  key: SOCKET_MAX_REPLICAS
             - name: RING_SECRET
               valueFrom:
                 secretKeyRef:
@@ -55,11 +94,6 @@ spec:
                 configMapKeyRef:
                   name: rtc-config
                   key: RING_VNODES_PER_WEIGHT
-            - name: PUBLIC_DOMAIN_TEMPLATE
-              valueFrom:
-                configMapKeyRef:
-                  name: rtc-config
-                  key: PUBLIC_DOMAIN_TEMPLATE
             - name: ALPHA
               valueFrom:
                 configMapKeyRef:
@@ -96,11 +130,20 @@ spec:
                   name: rtc-config
                   key: MPS_PER_POD
             - name: PROMETHEUS_HOST
-              value: "prometheus-service"
-              # If Prometheus is in a different namespace:
-              # value: "prometheus-service.monitoring.svc.cluster.local"
+              valueFrom:
+                configMapKeyRef:
+                  name: rtc-config
+                  key: PROMETHEUS_HOST
             - name: PROMETHEUS_PORT
-              value: "9090"
+              valueFrom:
+                configMapKeyRef:
+                  name: rtc-config
+                  key: PROMETHEUS_PORT
+            - name: USE_VIRTUAL_THREADS
+              valueFrom:
+                configMapKeyRef:
+                  name: rtc-config
+                  key: USE_VIRTUAL_THREADS
           resources:
             requests:
               cpu: 500m
@@ -115,6 +158,7 @@ spec:
             initialDelaySeconds: 30
             periodSeconds: 10
             timeoutSeconds: 3
+            failureThreshold: 3
           readinessProbe:
             httpGet:
               path: /healthz
@@ -122,8 +166,10 @@ spec:
             initialDelaySeconds: 10
             periodSeconds: 5
             timeoutSeconds: 3
+            failureThreshold: 2
 
 ---
+# Load-Balancer Service
 apiVersion: v1
 kind: Service
 metadata:
@@ -142,6 +188,7 @@ spec:
       protocol: TCP
 
 ---
+# PodDisruptionBudget for load-balancer
 apiVersion: policy/v1
 kind: PodDisruptionBudget
 metadata:
@@ -154,28 +201,49 @@ spec:
       app: load-balancer
 
 ---
-# ServiceMonitor for Prometheus Operator (optional)
-# apiVersion: monitoring.coreos.com/v1
-# kind: ServiceMonitor
-# metadata:
-#   name: load-balancer-metrics
-#   namespace: rtc
-# spec:
-#   selector:
-#     matchLabels:
-#       app: load-balancer
-#   endpoints:
-#     - port: http
-#       path: /metrics
-#       interval: 30s
-
-
-
-
-
-
-
-
-
-
+# HorizontalPodAutoscaler for load-balancer
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: load-balancer-hpa
+  namespace: rtc
+  labels:
+    app: load-balancer
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: load-balancer
+  minReplicas: 1
+  maxReplicas: 5
+  behavior:
+    scaleDown:
+      stabilizationWindowSeconds: 300  # 5 minutes
+      policies:
+        - type: Percent
+          value: 50
+          periodSeconds: 60
+    scaleUp:
+      stabilizationWindowSeconds: 0
+      policies:
+        - type: Percent
+          value: 100
+          periodSeconds: 30
+        - type: Pods
+          value: 2
+          periodSeconds: 30
+      selectPolicy: Max
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 60
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: 60
 

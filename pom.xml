@@ -34,6 +34,7 @@
         <awaitility.version>4.2.1</awaitility.version>
         <testcontainers.version>1.19.8</testcontainers.version>
         <guava.version>33.2.1-jre</guava.version>
+        <fabric8.version>7.4.0</fabric8.version>
     </properties>
 
     <dependencyManagement>
@@ -114,6 +115,13 @@
                 <groupId>com.google.guava</groupId>
                 <artifactId>guava</artifactId>
                 <version>${guava.version}</version>
+            </dependency>
+
+            <!-- Fabric8 Kubernetes Client -->
+            <dependency>
+                <groupId>io.fabric8</groupId>
+                <artifactId>kubernetes-client</artifactId>
+                <version>${fabric8.version}</version>
             </dependency>
 
           <!-- Test dependencies -->

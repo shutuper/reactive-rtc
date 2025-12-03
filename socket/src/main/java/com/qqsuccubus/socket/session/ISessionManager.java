@@ -3,6 +3,7 @@ package com.qqsuccubus.socket.session;
 import com.qqsuccubus.core.msg.Envelope;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
+import reactor.netty.http.websocket.WebsocketOutbound;
 
 import java.util.Set;
 
@@ -16,11 +17,12 @@ public interface ISessionManager {
     /**
      * Creates a new session for a user.
      *
-     * @param clientId      User identifier
+     * @param clientId     User identifier
      * @param resumeOffset Optional resume offset (null for new connection)
+     * @param outbound websocket outbound channel
      * @return Mono of Session
      */
-    Mono<Session> createSession(String clientId, int resumeOffset);
+    Mono<Session> createSession(String clientId, int resumeOffset, WebsocketOutbound outbound);
 
     Mono<String> getClientTargetNodeId(String clientId);
 

@@ -1,10 +1,13 @@
 package com.qqsuccubus.socket.ws;
 
 import com.qqsuccubus.socket.config.SocketConfig;
+import com.qqsuccubus.socket.drain.DrainService;
 import com.qqsuccubus.socket.kafka.IKafkaService;
 import com.qqsuccubus.socket.metrics.MetricsService;
 import com.qqsuccubus.socket.session.ISessionManager;
 import io.netty.handler.codec.http.QueryStringDecoder;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Mono;
 import reactor.netty.http.server.HttpServerRequest;
 import reactor.netty.http.server.HttpServerResponse;
@@ -21,16 +24,20 @@ import java.util.stream.Stream;
  * </p>
  */
 public class WebSocketUpgradeHandler {
+    private static final Logger log = LoggerFactory.getLogger(WebSocketUpgradeHandler.class);
 
     private final WebSocketHandler wsHandler;
+    private final DrainService drainService;
 
     public WebSocketUpgradeHandler(
             SocketConfig config,
             ISessionManager sessionManager,
             IKafkaService kafkaService,
-            MetricsService metricsService
+            MetricsService metricsService,
+            DrainService drainService
     ) {
         this.wsHandler = new WebSocketHandler(config, sessionManager, kafkaService, metricsService);
+        this.drainService = drainService;
     }
 
     /**
@@ -41,6 +48,14 @@ public class WebSocketUpgradeHandler {
      * @return Mono for upgrade
      */
     public Mono<Void> handle(HttpServerRequest req, HttpServerResponse res) {
+        // Reject new connections if node is draining
+        if (drainService.isDraining()) {
+            log.warn("Rejecting new WebSocket connection - node is draining");
+            return res.status(503)
+                .sendString(Mono.just("Service unavailable - node is draining"))
+                .then();
+        }
+
         // Extract query parameters from HTTP request (before upgrade)
         QueryStringDecoder decoder = new QueryStringDecoder(req.uri());
 

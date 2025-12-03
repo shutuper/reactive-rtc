@@ -51,7 +51,6 @@ public class KafkaService implements IKafkaService {
     private KafkaReceiver<String, String> controlReceiver;
 
     // Topic configuration for per-node delivery topics
-    private static final String DELIVERY_TOPIC_PREFIX = "delivery_node_";  // Topic naming: delivery_node_{nodeId}
     private static final int DEFAULT_PARTITIONS = 1;      // Partitions per node topic
     private static final short REPLICATION_FACTOR = 1;    // Replication factor (1 for dev, 3+ for prod)
 
@@ -380,7 +379,7 @@ public class KafkaService implements IKafkaService {
      * @return Topic name for the node
      */
     private String getDeliveryTopicForNode(String nodeId) {
-        return DELIVERY_TOPIC_PREFIX + nodeId;
+        return Topics.deliveryTopicFor(nodeId);
     }
 
     /**

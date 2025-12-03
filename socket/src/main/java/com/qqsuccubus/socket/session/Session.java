@@ -4,6 +4,7 @@ import com.qqsuccubus.core.msg.Envelope;
 import lombok.Getter;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Sinks;
+import reactor.netty.http.websocket.WebsocketOutbound;
 
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -15,11 +16,13 @@ public class Session {
     private final String clientId;
     private final AtomicInteger lastOffset;
     private final Sinks.Many<Envelope> sink;
+    private final WebsocketOutbound outbound;
 
-    public Session(String clientId, int lastOffset, Sinks.Many<Envelope> sink) {
+    public Session(String clientId, int lastOffset, Sinks.Many<Envelope> sink, WebsocketOutbound outbound) {
         this.clientId = clientId;
         this.lastOffset = new AtomicInteger(lastOffset);
         this.sink = sink;
+        this.outbound = outbound;
     }
 
     public Flux<Envelope> getOutboundFlux() {

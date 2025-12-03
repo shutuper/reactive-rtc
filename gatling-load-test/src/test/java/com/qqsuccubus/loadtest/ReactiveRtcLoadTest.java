@@ -12,13 +12,29 @@ import java.util.stream.Stream;
 import static io.gatling.javaapi.core.CoreDsl.*;
 import static io.gatling.javaapi.http.HttpDsl.*;
 
+/**
+ * Reactive RTC Load Test for Minikube/Kubernetes deployment.
+ * 
+ * The test flow:
+ * 1. Call load-balancer /ws/connect?clientId=xxx to get assigned socket node
+ * 2. Connect to WebSocket at /ws/{nodeId}/connect?clientId=xxx via nginx
+ * 3. Send messages periodically
+ * 
+ * Usage:
+ *   # First, port-forward nginx gateway:
+ *   minikube kubectl -- port-forward -n rtc svc/nginx-gateway-service 8080:80
+ *   
+ *   # Then run test:
+ *   mvn gatling:test -Dclients=100 -Drampup=1 -Dduration=5
+ */
 public class ReactiveRtcLoadTest extends Simulation {
 
-    // Configuration
-    private static final String LOAD_BALANCER_URL = System.getProperty("lb.url", "http://localhost:8080");
-    private static final int TARGET_CLIENTS = Integer.parseInt(System.getProperty("clients", "9000"));
-    private static final int RAMP_UP_MINUTES = Integer.parseInt(System.getProperty("rampup", "10"));
-    private static final int TEST_DURATION_MINUTES = Integer.parseInt(System.getProperty("duration", "20"));
+    // Configuration - defaults work with minikube port-forward
+    private static final String GATEWAY_URL = System.getProperty("gateway.url", "http://localhost:8080");
+    private static final String WS_GATEWAY_URL = System.getProperty("ws.gateway.url", "ws://localhost:8080");
+    private static final int TARGET_CLIENTS = Integer.parseInt(System.getProperty("clients", "100"));
+    private static final int RAMP_UP_MINUTES = Integer.parseInt(System.getProperty("rampup", "1"));
+    private static final int TEST_DURATION_MINUTES = Integer.parseInt(System.getProperty("duration", "5"));
     private static final int REQUESTED_INTERVAL = Integer.parseInt(System.getProperty("interval", "3"));
     private static final int MAX_RECONNECT_ATTEMPTS = Integer.parseInt(System.getProperty("maxReconnectAttempts", "10"));
 
@@ -30,7 +46,7 @@ public class ReactiveRtcLoadTest extends Simulation {
         // Calculate expected MPS with requested interval
         double requestedMPS = (double) TARGET_CLIENTS / REQUESTED_INTERVAL;
 
-        // If exceeds max, calculate minimum required interval to stay under 3K MPS
+        // If exceeds max, calculate minimum required interval to stay under max MPS
         if (requestedMPS > MAX_MPS) {
             MESSAGE_INTERVAL_SECONDS = (int) Math.ceil((double) TARGET_CLIENTS / MAX_MPS);
         } else {
@@ -43,7 +59,7 @@ public class ReactiveRtcLoadTest extends Simulation {
 
     // HTTP Protocol for Load Balancer
     HttpProtocolBuilder httpProtocol = http
-        .baseUrl(LOAD_BALANCER_URL)
+        .baseUrl(GATEWAY_URL)
         .acceptHeader("application/json")
         .userAgentHeader("Gatling-LoadTest/1.0");
 
@@ -57,50 +73,19 @@ public class ReactiveRtcLoadTest extends Simulation {
             );
         }).iterator();
 
-    // Helper to map nodeId to WebSocket URL
-    // Uses Docker service names when running in Docker, localhost when running locally
-    private String nodeIdToWsUrl(String nodeId) {
-        if (nodeId == null) {
-            return null;
-        }
-
-        // Check if running in Docker (by checking if we can resolve service names)
-        boolean inDocker = System.getenv("DOCKER_ENV") != null || !LOAD_BALANCER_URL.contains("localhost");
-
-        switch (nodeId) {
-            case "socket-node-1":
-                return inDocker ? "ws://socket-1:8081/ws" : "ws://localhost:8081/ws";
-            case "socket-node-2":
-                return inDocker ? "ws://socket-2:8082/ws" : "ws://localhost:8082/ws";
-            case "socket-node-3":
-                return inDocker ? "ws://socket-3:8083/ws" : "ws://localhost:8083/ws";
-            case "node-1":
-                return inDocker ? "ws://socket-1:8081/ws" : "ws://localhost:8081/ws";
-            case "node-2":
-                return inDocker ? "ws://socket-2:8082/ws" : "ws://localhost:8082/ws";
-            case "node-3":
-                return inDocker ? "ws://socket-3:8083/ws" : "ws://localhost:8083/ws";
-            default:
-                // Fallback - log warning and use default
-                System.err.println("⚠ Unknown nodeId: " + nodeId + ", using default");
-                return inDocker ? "ws://socket-1:8081/ws" : "ws://localhost:8081/ws";
-        }
-    }
-
-    // Scenario: Resolve node and connect via WebSocket
+    // Scenario: Resolve node and connect via WebSocket through nginx
     ChainBuilder resolveAndConnect = exec(session -> {
             // Initialize reconnect counter if not set
             if (!session.contains("reconnectAttempts")) {
                 session = session.set("reconnectAttempts", 0);
             }
-            // Initialize resolve retry counter
             if (!session.contains("resolveRetries")) {
                 session = session.set("resolveRetries", 0);
             }
             return session;
         })
-        // Step 1: Resolve node from Load Balancer (with retries)
-        .tryMax(5).on(  // Try up to 5 times to resolve
+        // Step 1: Call load-balancer /api/v1/resolve to get assigned socket node
+        .tryMax(5).on(
             exec(
                 http("Resolve Node")
                     .get("/api/v1/resolve")
@@ -109,21 +94,20 @@ public class ReactiveRtcLoadTest extends Simulation {
                     .check(bodyString().saveAs("responseBody"))
                     .check(jsonPath("$.nodeId").optional().saveAs("nodeId"))
             )
-            .pause(Duration.ofMillis(100))  // Small pause between retries
+            .pause(Duration.ofMillis(100))
         )
         .exec(session -> {
             String nodeId = session.getString("nodeId");
             String clientId = session.getString("clientId");
             String responseBody = session.getString("responseBody");
 
-            // Debug: Log response if nodeId is null (but only occasionally to reduce spam)
+            // Debug: Log response if nodeId is null
             if (nodeId == null || nodeId.isEmpty()) {
                 Long clientNum = session.getLong("clientIdNum");
                 if (clientNum != null && clientNum % 100 == 0) {
                     System.err.println("Load balancer returned null nodeId for client " + clientId +
                                      " (response: " + responseBody + ")");
                 }
-                // Wait longer before marking as failed to give system time to recover
                 try {
                     Thread.sleep(500);
                 } catch (InterruptedException e) {
@@ -132,50 +116,43 @@ public class ReactiveRtcLoadTest extends Simulation {
                 return session.markAsFailed();
             }
 
-            String wsUrl = nodeIdToWsUrl(nodeId);
-
-            if (wsUrl == null) {
-                return session.markAsFailed();
-            }
-
-            // Build WebSocket URL with query parameters
-            // For first connection: only clientId
-            // For reconnection: clientId + resumeOffset=1
+            // Build WebSocket URL: /ws/{nodeId}/connect?clientId=xxx
+            // Nginx will route this to the specific socket node based on nodeId
             Integer reconnectAttempts = session.getInt("reconnectAttempts");
             boolean isReconnect = reconnectAttempts != null && reconnectAttempts > 0;
 
-            String wsUrlWithParams = isReconnect
-                ? wsUrl + "?clientId=" + clientId + "&resumeOffset=1"
-                : wsUrl + "?clientId=" + clientId;
+            String wsPath = "/ws/" + nodeId + "/connect";
+            String wsUrl = isReconnect
+                ? WS_GATEWAY_URL + wsPath + "?clientId=" + clientId + "&resumeOffset=1"
+                : WS_GATEWAY_URL + wsPath + "?clientId=" + clientId;
 
             String connectionType = isReconnect ? "(reconnect)" : "(initial)";
-            // Reduced logging - only log every 100th connection or reconnections
             Long clientNum = session.getLong("clientIdNum");
             if (isReconnect || (clientNum != null && clientNum % 100 == 0)) {
                 System.out.println("Client " + clientId + " -> " + nodeId + " " + connectionType);
             }
 
-            // Initialize counters if they don't exist (important for reconnects)
+            // Initialize counters
             Integer currentSent = session.contains("messagesSent") ? session.getInt("messagesSent") : 0;
             Integer currentReceived = session.contains("messagesReceived") ? session.getInt("messagesReceived") : 0;
 
-            return session.set("wsUrlWithParams", wsUrlWithParams)
+            return session.set("wsUrl", wsUrl)
+                         .set("nodeId", nodeId)
                          .set("messagesReceived", currentReceived)
                          .set("messagesSent", currentSent);
         })
 
-        // Exit here if resolve failed - don't try to connect
+        // Exit here if resolve failed
         .exitHereIfFailed()
 
-        // Step 2: Connect to WebSocket with close handler
+        // Step 2: Connect to WebSocket via nginx gateway
         .exec(
             ws("Connect WebSocket")
-                .connect("#{wsUrlWithParams}")
+                .connect("#{wsUrl}")
                 .onConnected(
                     exec(session -> {
-                        // Reduced logging - don't log every connection
-                        return session.set("reconnectAttempts", 0) // Reset reconnect counter on success
-                                     .set("wsConnected", true); // Track connection state
+                        return session.set("reconnectAttempts", 0)
+                                     .set("wsConnected", true);
                     })
                 )
         );
@@ -184,7 +161,7 @@ public class ReactiveRtcLoadTest extends Simulation {
     ScenarioBuilder userScenario = scenario("WebSocket User")
         .feed(clientIdFeeder)
 
-        // Initialize session attributes early
+        // Initialize session attributes
         .exec(session -> {
             return session.set("messagesSent", 0)
                          .set("messagesReceived", 0)
@@ -202,36 +179,22 @@ public class ReactiveRtcLoadTest extends Simulation {
         }).on(
             // Generate and send message
             exec(session -> {
-                // Get current max client number from AtomicLong
                 long maxClientNum = clientCounter.get();
                 long currentClientNum = session.getLong("clientIdNum");
 
-                // Generate random target client within range [1, maxClientNum)
+                // Generate random target client
                 long targetNum = maxClientNum <= 1 ? 1 :
                                ThreadLocalRandom.current().nextLong(1, maxClientNum);
                 String targetClientId = "user" + targetNum;
 
-                // Generate unique message ID and timestamp
                 String msgId = UUID.randomUUID().toString();
                 long timestamp = System.currentTimeMillis();
                 String clientId = session.getString("clientId");
 
-                // Build message JSON according to specification
+                // Build message JSON
                 String message = String.format(
                     "{\"msgId\":\"%s\",\"from\":\"%s\",\"toClientId\":\"%s\",\"type\":\"message\"," +
-                    "\"payloadJson\":\"{\\\"message\\\":\\\"Hello world, how are you????????????????" +
-                    "?????????????????????????????????????????????????????????????????????????????????" +
-                    "?????????????????????????????????????????????????????????????????????????????????" +
-                    "?????????????????????????????????????????????????????????????????????????????????" +
-                    "?????????????????????????????????????????????????????????????????????????????????" +
-                    "?????????????????????????????????????????????????????????????????????????????????" +
-                    "?????????????????????????????????????????????????????????????????????????????????" +
-                    "?????????????????????????????????????????????????????????????????????????????????" +
-                    "?????????????????????????????????????????????????????????????????????????????????" +
-                    "?????????????????????????????????????????????????????????????????????????????????" +
-                    "?????????????????????????????????????????????????????????????????????????????????" +
-                    "?????????????????????????????????????????????????????????????????????????????????" +
-                    "????????????????????????????!\\\",\\\"roomId\\\":\\\"room1\\\"}\",\"ts\":%d}",
+                    "\"payloadJson\":\"{\\\"message\\\":\\\"Hello from load test!\\\",\\\"roomId\\\":\\\"room1\\\"}\",\"ts\":%d}",
                     msgId, clientId, targetClientId, timestamp
                 );
 
@@ -243,7 +206,6 @@ public class ReactiveRtcLoadTest extends Simulation {
                     .sendText("#{outgoingMessage}")
             )
             .exec(session -> {
-                // Increment sent counter
                 Integer sent = session.contains("messagesSent") ? session.getInt("messagesSent") : 0;
                 return session.set("messagesSent", sent + 1);
             })
@@ -254,24 +216,21 @@ public class ReactiveRtcLoadTest extends Simulation {
                                      session.getInt("consecutiveFailures") : 0;
                     return session.set("consecutiveFailures", failures + 1);
                 } else {
-                    // Reset on success
                     if (session.contains("consecutiveFailures")) {
                         return session.set("consecutiveFailures", 0);
                     }
                 }
                 return session;
             })
-            // Only reconnect if we've had multiple consecutive failures
+            // Reconnect after 3 consecutive failures
             .doIf(session -> {
-                // Check if we actually have a failure and WebSocket is not connected
                 if (session.isFailed()) {
                     Integer failures = session.contains("consecutiveFailures") ?
                                      session.getInt("consecutiveFailures") : 0;
-                    return failures >= 3; // Only reconnect after 3 failures
+                    return failures >= 3;
                 }
                 return false;
             }).then(
-                // Close existing WebSocket before reconnecting
                 exec(
                     ws("Close Before Reconnect")
                         .close()
@@ -279,46 +238,40 @@ public class ReactiveRtcLoadTest extends Simulation {
                 .exec(session -> {
                     Integer attempts = session.getInt("reconnectAttempts");
                     int newAttempts = (attempts != null ? attempts : 0) + 1;
-                    // Only log reconnections
                     System.out.println("Reconnecting client " + session.getString("clientId") + " (attempt " + newAttempts + ")");
-                    return session.markAsSucceeded() // Clear failed status
+                    return session.markAsSucceeded()
                                  .set("reconnectAttempts", newAttempts)
-                                 .set("consecutiveFailures", 0); // Reset failure counter
+                                 .set("consecutiveFailures", 0);
                 })
                 .pause(Duration.ofSeconds(2))
                 .exec(resolveAndConnect)
             )
 
-            // Process any incoming messages
+            // Process incoming messages
             .exec(
                 ws.processUnmatchedMessages((messages, session) -> {
                     if (!messages.isEmpty()) {
                         String clientId = session.getString("clientId");
 
-                        // Check if any message is a ping request from server
+                        // Check for ping request
                         boolean hasPingRequest = false;
                         for (var msg : messages) {
                             String msgText = msg.toString();
-                            if (msgText != null && (msgText.contains("\"type\":\"ping\"") ||
-                                                   (msgText.contains("ping") && msgText.contains("request")))) {
+                            if (msgText != null && msgText.contains("\"type\":\"ping\"")) {
                                 hasPingRequest = true;
                                 break;
                             }
                         }
 
                         if (hasPingRequest) {
-                            // Server sent a ping, we need to respond with pong
-                            // Mark that we need to send a ping response
                             session = session.set("needsPongResponse", true);
                         }
 
-                        // Count received messages
                         Integer currentCount = session.getInt("messagesReceived");
                         int newCount = (currentCount != null ? currentCount : 0) + messages.size();
                         session = session.set("messagesReceived", newCount);
 
-                        // Reduced logging - only log every 10000 messages
-                        if (newCount % 10000 == 0) {
+                        if (newCount % 1000 == 0) {
                             System.out.println("Client " + clientId + " received: " + newCount);
                         }
                     }
@@ -326,7 +279,7 @@ public class ReactiveRtcLoadTest extends Simulation {
                 })
             )
 
-            // Send pong response if server sent a ping
+            // Send pong response if needed
             .doIf(session -> session.contains("needsPongResponse") && session.getBoolean("needsPongResponse")).then(
                 exec(session -> {
                     String clientId = session.getString("clientId");
@@ -347,11 +300,7 @@ public class ReactiveRtcLoadTest extends Simulation {
             .pause(Duration.ofSeconds(MESSAGE_INTERVAL_SECONDS))
         )
 
-        // Final stats
-        .exec(session -> {
-            // Don't print final stats - too much noise
-            return session;
-        })
+        // Close connection at end
         .exec(
             ws("Close Connection")
                 .close()
@@ -359,41 +308,37 @@ public class ReactiveRtcLoadTest extends Simulation {
 
     // Load injection profile
     {
-        // Calculate users per second for ramp-up
         double usersPerSecond = (double) TARGET_CLIENTS / (RAMP_UP_MINUTES * 60.0);
-
-        // Calculate expected MPS (Messages Per Second)
         double messagesPerSecPerClient = 1.0 / MESSAGE_INTERVAL_SECONDS;
         double expectedMPS = TARGET_CLIENTS * messagesPerSecPerClient;
 
         System.out.println("\n" +
             "╔═══════════════════════════════════════════════════════════════════╗\n" +
-            "║          Reactive RTC Load Test Configuration                    ║\n" +
+            "║          Reactive RTC Load Test (Minikube)                        ║\n" +
             "╠═══════════════════════════════════════════════════════════════════╣\n" +
+            "║  Gateway URL:            " + String.format("%-39s", GATEWAY_URL) + "║\n" +
+            "║  WebSocket URL:          " + String.format("%-39s", WS_GATEWAY_URL) + "║\n" +
             "║  Target Clients:         " + String.format("%-39s", String.format("%,d", TARGET_CLIENTS)) + "║\n" +
             "║  Ramp-up Duration:       " + String.format("%-39s", RAMP_UP_MINUTES + " minutes") + "║\n" +
             "║  Test Duration:          " + String.format("%-39s", TEST_DURATION_MINUTES + " minutes") + "║\n" +
             "║  Message Interval:       " + String.format("%-39s", MESSAGE_INTERVAL_SECONDS + " seconds") + "║\n" +
             "║  Users per Second:       " + String.format("%-39s", String.format("%.2f", usersPerSecond)) + "║\n" +
             "║  Expected MPS:           " + String.format("%-39s", String.format("%.0f (max: %d)", expectedMPS, MAX_MPS)) + "║\n" +
-            "║  Load Balancer:          " + String.format("%-39s", LOAD_BALANCER_URL) + "║\n" +
             "║  Max Reconnect Attempts: " + String.format("%-39s", MAX_RECONNECT_ATTEMPTS) + "║\n" +
             "╚═══════════════════════════════════════════════════════════════════╝\n"
         );
 
         setUp(
             userScenario.injectOpen(
-                // Ramp up to target over specified duration
                 rampUsersPerSec(0).to(usersPerSecond).during(Duration.ofMinutes(RAMP_UP_MINUTES)),
-                // Then maintain constant load (existing users continue sending messages)
                 nothingFor(Duration.ofMinutes(Math.max(0, TEST_DURATION_MINUTES - RAMP_UP_MINUTES)))
             )
         )
         .protocols(httpProtocol)
         .assertions(
-            global().failedRequests().percent().lte(10.0), // Max 10% failure rate
-            global().responseTime().percentile3().lte(5000), // 95th percentile < 5s
-            global().responseTime().max().lte(30000) // Max 30s response time
+            global().failedRequests().percent().lte(10.0),
+            global().responseTime().percentile3().lte(5000),
+            global().responseTime().max().lte(30000)
         );
     }
 }

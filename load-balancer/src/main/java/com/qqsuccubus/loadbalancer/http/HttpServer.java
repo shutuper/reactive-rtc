@@ -2,6 +2,7 @@ package com.qqsuccubus.loadbalancer.http;
 
 import com.qqsuccubus.core.util.JsonUtils;
 import com.qqsuccubus.loadbalancer.config.LBConfig;
+import com.qqsuccubus.loadbalancer.k8s.PodInfoService;
 import com.qqsuccubus.loadbalancer.metrics.NodeMetricsService;
 import com.qqsuccubus.loadbalancer.metrics.PrometheusMetricsExporter;
 import com.qqsuccubus.loadbalancer.metrics.PrometheusQueryService;
@@ -32,6 +33,7 @@ public class HttpServer {
     private final PrometheusQueryService prometheusQueryService;
     @Getter
     private final NodeMetricsService nodeMetricsService;
+    private final PodInfoService podInfoService;
 
     private DisposableServer server;
 
@@ -40,13 +42,15 @@ public class HttpServer {
         ILoadBalancer ringManager,
         PrometheusMetricsExporter metricsExporter,
         PrometheusQueryService prometheusQueryService,
-        NodeMetricsService nodeMetricsService
+        NodeMetricsService nodeMetricsService,
+        PodInfoService podInfoService
     ) {
         this.config = config;
         this.ringManager = ringManager;
         this.metricsExporter = metricsExporter;
         this.prometheusQueryService = prometheusQueryService;
         this.nodeMetricsService = nodeMetricsService;
+        this.podInfoService = podInfoService;
     }
 
     /**
@@ -83,6 +87,7 @@ public class HttpServer {
                     .then()
             )
             // Resolve node for userId
+            // Returns nodeId and podIp for direct routing
             .get("/api/v1/resolve", (req, res) -> {
                 QueryStringDecoder decoder = new QueryStringDecoder(req.uri());
                 String userId = decoder.parameters().containsKey("clientId") 
@@ -100,9 +105,20 @@ public class HttpServer {
                         .sendString(Mono.just("{\"error\":\"No nodes available\"}"));
                 }
 
+                // Get pod IP for direct routing
+                String podIp = podInfoService.getPodIp(node.nodeId());
+
                 return Mono.fromCallable(() -> {
                     Map<String, Object> response = new HashMap<>();
                     response.put("nodeId", node.nodeId());
+                    if (podIp != null) {
+                        response.put("podIp", podIp);
+                        // wsUrl uses IP-based routing: /ws/ip/{podIp}/connect
+                        response.put("wsUrl", "/ws/ip/" + podIp + "/connect");
+                    } else {
+                        // Fallback to round-robin if IP not available
+                        response.put("wsUrl", "/ws/connect");
+                    }
                     return JsonUtils.writeValueAsString(response);
                 }).flatMap(json ->
                     res.header("Content-Type", "application/json")

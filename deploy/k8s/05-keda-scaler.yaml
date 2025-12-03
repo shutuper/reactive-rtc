@@ -1,0 +1,83 @@
+---
+# KEDA ScaledObject for socket nodes (BACKUP ONLY - Optional)
+#
+# NOTE: The primary scaling mechanism is the load-balancer's intelligent
+# decision-making via StatefulSetScalerService, which directly scales the
+# socket Deployment based on comprehensive metrics analysis.
+#
+# This KEDA ScaledObject serves as a backup/safety net with conservative
+# thresholds to prevent extreme scenarios.
+#
+# Requires KEDA operator: kubectl apply -f https://github.com/kedacore/keda/releases/download/v2.12.0/keda-2.12.0.yaml
+
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: socket-scaler-backup
+  namespace: rtc
+  labels:
+    app: socket
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: socket
+
+  minReplicaCount: 2
+  maxReplicaCount: 50
+
+  # Polling interval for checking triggers
+  pollingInterval: 60  # Check every minute (less frequent than load-balancer)
+
+  # Cooldown period after last trigger activation
+  cooldownPeriod: 600  # 10 minutes - very conservative
+
+  # Advanced scaling behavior - very conservative
+  advanced:
+    horizontalPodAutoscalerConfig:
+      behavior:
+        scaleDown:
+          stabilizationWindowSeconds: 600  # 10 minutes
+          policies:
+            - type: Pods
+              value: 1
+              periodSeconds: 180  # Max 1 pod every 3 minutes
+        scaleUp:
+          stabilizationWindowSeconds: 60
+          policies:
+            - type: Pods
+              value: 2
+              periodSeconds: 60
+
+  triggers:
+    # Backup trigger: Only extreme CPU overload (>90%)
+    - type: cpu
+      metricType: Utilization
+      metadata:
+        value: "90"
+
+    # Backup trigger: Only extreme Memory overload (>90%)
+    - type: memory
+      metricType: Utilization
+      metadata:
+        value: "90"
+
+---
+# Note: Load-balancer handles intelligent scaling based on:
+# - CPU utilization
+# - Memory utilization
+# - Active connections
+# - Message throughput (MPS)
+# - P95 latency
+# - Kafka consumer lag
+# - Load trends and history
+#
+# The load-balancer scales the socket Deployment directly using
+# the Kubernetes API, providing:
+# - Faster response times
+# - More intelligent decisions
+# - Exponential scaling for traffic spikes
+# - Conservative scale-in with draining
+# - Pod deletion costs respected (least-loaded pods removed first)
+
+

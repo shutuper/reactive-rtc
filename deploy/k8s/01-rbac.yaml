@@ -1,0 +1,117 @@
+---
+# Namespace for all RTC resources
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: rtc
+  labels:
+    app.kubernetes.io/name: reactive-rtc
+    app.kubernetes.io/part-of: reactive-rtc
+
+---
+# ServiceAccount for load-balancer pods
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: load-balancer-sa
+  namespace: rtc
+  labels:
+    app: load-balancer
+
+---
+# Role for load-balancer - allows managing leases and pods
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: load-balancer-role
+  namespace: rtc
+rules:
+  # Lease management for leader election
+  - apiGroups: ["coordination.k8s.io"]
+    resources: ["leases"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+
+  # Pod management for deletion cost updates and listing
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list", "watch", "update", "patch"]
+
+  # Deployment/StatefulSet management for scaling
+  - apiGroups: ["apps"]
+    resources: ["deployments", "deployments/scale", "statefulsets", "statefulsets/scale"]
+    verbs: ["get", "list", "watch", "update", "patch"]
+
+  # ConfigMap read access
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    verbs: ["get", "list", "watch"]
+
+  # Secret read access
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["get", "list", "watch"]
+
+---
+# RoleBinding for load-balancer
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: load-balancer-rolebinding
+  namespace: rtc
+subjects:
+  - kind: ServiceAccount
+    name: load-balancer-sa
+    namespace: rtc
+roleRef:
+  kind: Role
+  name: load-balancer-role
+  apiGroup: rbac.authorization.k8s.io
+
+---
+# ServiceAccount for socket pods
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: socket-sa
+  namespace: rtc
+  labels:
+    app: socket
+
+---
+# Role for socket - minimal permissions (read configmaps/secrets)
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: socket-role
+  namespace: rtc
+rules:
+  # ConfigMap read access
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    verbs: ["get", "list", "watch"]
+
+  # Secret read access
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["get", "list", "watch"]
+
+  # Pod read access (for own pod metadata)
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list"]
+
+---
+# RoleBinding for socket
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: socket-rolebinding
+  namespace: rtc
+subjects:
+  - kind: ServiceAccount
+    name: socket-sa
+    namespace: rtc
+roleRef:
+  kind: Role
+  name: socket-role
+  apiGroup: rbac.authorization.k8s.io

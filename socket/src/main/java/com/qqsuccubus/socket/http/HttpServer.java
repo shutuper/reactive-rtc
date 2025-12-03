@@ -1,6 +1,7 @@
 package com.qqsuccubus.socket.http;
 
 import com.qqsuccubus.socket.config.SocketConfig;
+import com.qqsuccubus.socket.drain.DrainService;
 import com.qqsuccubus.socket.kafka.IKafkaService;
 import com.qqsuccubus.socket.metrics.MetricsService;
 import com.qqsuccubus.socket.metrics.PrometheusMetricsExporter;
@@ -17,7 +18,7 @@ import java.time.Duration;
 import java.util.function.Function;
 
 /**
- * HTTP server for health checks, metrics, and WebSocket upgrades.
+ * HTTP server for health checks, metrics, drain endpoint, and WebSocket upgrades.
  */
 @RequiredArgsConstructor
 public class HttpServer {
@@ -28,6 +29,7 @@ public class HttpServer {
     private final IKafkaService kafkaService;
     private final MetricsService metricsService;
     private final PrometheusMetricsExporter metricsExporter;
+    private final DrainService drainService;
     private DisposableServer server;
 
     /**
@@ -37,7 +39,7 @@ public class HttpServer {
     public DisposableServer start() {
         // Create upgrade handler for proper param extraction
         WebSocketUpgradeHandler upgradeHandler = new WebSocketUpgradeHandler(
-            config, sessionManager, kafkaService, metricsService
+            config, sessionManager, kafkaService, metricsService, drainService
         );
 
         server = reactor.netty.http.server.HttpServer.create()
@@ -45,15 +47,48 @@ public class HttpServer {
             .option(ChannelOption.SO_REUSEADDR, true)
             .metrics(true, Function.identity())
             .route(routes -> routes
-                // Health check endpoint
-                .get("/healthz", (req, res) -> res.status(200).sendString(Mono.just("OK")))
+                // Health check endpoint - fails if draining
+                .get("/healthz", (req, res) -> {
+                    if (drainService.isDraining()) {
+                        return res.status(503).sendString(Mono.just("Draining"));
+                    }
+                    return res.status(200).sendString(Mono.just("OK"));
+                })
+                // Readiness check endpoint - separate from liveness
+                .get("/readyz", (req, res) -> {
+                    if (drainService.isDraining()) {
+                        return res.status(503).sendString(Mono.just("Not Ready - Draining"));
+                    }
+                    return res.status(200).sendString(Mono.just("Ready"));
+                })
+                // Drain endpoint - called by Kubernetes preStop hook
+                .post("/drain", (req, res) -> {
+                    log.warn("Drain endpoint called - starting graceful connection draining");
+                    return drainService.startDrain()
+                        .then(res.status(202).sendString(Mono.just(String.format(
+                            "Drain started - %d connections to drain",
+                            drainService.getRemainingConnections()
+                        ))).then());
+                })
+                // Drain status endpoint
+                .get("/drain/status", (req, res) -> {
+                    String status = String.format(
+                        "{ \"draining\": %b, \"complete\": %b, \"remaining\": %d }",
+                        drainService.isDraining(),
+                        drainService.isDrainComplete(),
+                        drainService.getRemainingConnections()
+                    );
+                    return res.status(200)
+                        .header("Content-Type", "application/json")
+                        .sendString(Mono.just(status));
+                })
                 // Metrics endpoint with Prometheus scraping
                 .get("/metrics", (req, res) ->
                     res.header("Content-Type", "text/plain; version=0.0.4; charset=utf-8")
                         .sendString(Mono.just(metricsExporter.scrape()))
                 )
                 // WebSocket upgrade endpoint with param extraction
-                .get("/ws", upgradeHandler::handle)
+                .get("/ws/connect", upgradeHandler::handle)
             )
             .bind()
             .doOnNext(port -> log.info("HTTP server started on port {}", port))

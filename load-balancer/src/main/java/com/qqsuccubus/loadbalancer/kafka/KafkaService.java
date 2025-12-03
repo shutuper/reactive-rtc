@@ -1,6 +1,7 @@
 package com.qqsuccubus.loadbalancer.kafka;
 
 import com.qqsuccubus.core.msg.ControlMessages;
+import com.qqsuccubus.core.msg.Envelope;
 import com.qqsuccubus.core.msg.Topics;
 import com.qqsuccubus.core.util.JsonUtils;
 import com.qqsuccubus.loadbalancer.config.LBConfig;
@@ -13,6 +14,7 @@ import org.apache.kafka.common.serialization.StringSerializer;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Mono;
+import reactor.kafka.receiver.KafkaReceiver;
 import reactor.kafka.sender.KafkaSender;
 import reactor.kafka.sender.SenderOptions;
 import reactor.kafka.sender.SenderRecord;
@@ -21,13 +23,14 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.Map;
 
-public class KafkaPublisher implements IRingPublisher {
-    private static final Logger log = LoggerFactory.getLogger(KafkaPublisher.class);
+public class KafkaService implements IKafkaService {
+    private static final Logger log = LoggerFactory.getLogger(KafkaService.class);
 
     private final KafkaSender<String, String> sender;
     private final AdminClient adminClient;
+    private KafkaReceiver<String, String> forwarderReceiver;
 
-    public KafkaPublisher(LBConfig config) {
+    public KafkaService(LBConfig config) {
         Map<String, Object> producerProps = new HashMap<>();
         producerProps.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, config.getKafkaBootstrap());
         producerProps.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, StringSerializer.class);
@@ -46,6 +49,8 @@ public class KafkaPublisher implements IRingPublisher {
         createTopicIfNotExists(Topics.CONTROL_RING, 4, (short) 1)
             .then(createTopicIfNotExists(Topics.CONTROL_SCALE, 1, (short) 1))
             .subscribe();
+
+
         log.info("Kafka publisher initialized");
     }
 
@@ -78,23 +83,18 @@ public class KafkaPublisher implements IRingPublisher {
             .then();
     }
 
-    public Mono<Void> publishDrainSignal(ControlMessages.DrainSignal drainSignal) {
-        String json = JsonUtils.writeValueAsString(drainSignal);
+    @Override
+    public Mono<Void> forwardMessage(Envelope envelope, String targetNodeId) {
         ProducerRecord<String, String> record = new ProducerRecord<>(
-            Topics.CONTROL_DRAIN,
-            drainSignal.getNodeId(), // partition by nodeId
-            json
+            Topics.deliveryTopicFor(targetNodeId),
+            targetNodeId, // no key (broadcast)
+            JsonUtils.writeValueAsString(envelope)
         );
-
-        return sender.send(Mono.just(SenderRecord.create(record, null)))
-            .next()
-            .doOnSuccess(result -> log.info("Published drain signal: nodeId={}, reason={}",
-                drainSignal.getNodeId(), drainSignal.getReason()))
-            .doOnError(err -> log.error("Failed to publish drain signal", err))
-            .then();
+        return sender.send(Mono.just(SenderRecord.create(record, null))).next().then();
     }
 
-    private Mono<Void> createTopicIfNotExists(String topicName, int partitions, short replicationFactor) {
+    @Override
+    public Mono<Void> createTopicIfNotExists(String topicName, int partitions, short replicationFactor) {
         return Mono.fromFuture(() -> adminClient.listTopics().names().toCompletionStage().toCompletableFuture())
             .flatMap(names -> {
                 if (names.contains(topicName)) {

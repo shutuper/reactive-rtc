@@ -1,0 +1,61 @@
+---
+# ConfigMap with all application configuration
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: rtc-config
+  namespace: rtc
+  labels:
+    app.kubernetes.io/part-of: reactive-rtc
+data:
+  # Infrastructure endpoints (Strimzi Kafka + Redis)
+  KAFKA_BOOTSTRAP: "kafka-kafka-bootstrap.rtc.svc.cluster.local:9092"
+  REDIS_URL: "redis://redis-master.rtc.svc.cluster.local:6379"
+
+  # Kubernetes configuration
+  KUBERNETES_NAMESPACE: "rtc"
+  ENABLE_LEADER_ELECTION: "true"
+  SOCKET_WORKLOAD_NAME: "socket"  # Name of socket Deployment
+  SOCKET_MIN_REPLICAS: "2"
+  SOCKET_MAX_REPLICAS: "50"
+
+  # Common settings
+  RING_VNODES_PER_WEIGHT: "150"
+  BUFFER_MAX: "100"
+  RESUME_TTL_SEC: "3600"
+  USE_VIRTUAL_THREADS: "true"
+
+  # Load-balancer settings
+  ALPHA: "0.4"
+  BETA: "0.4"
+  GAMMA: "0.2"
+  DELTA: "2.0"
+  L_SLO_MS: "500.0"
+  CONN_PER_POD: "5000"
+  MPS_PER_POD: "2500"
+  SCALING_INTERVAL_SEC: "60"
+  MAX_SCALE_STEP: "3"
+  HEARTBEAT_GRACE_SEC: "90"
+
+  # Socket settings
+  HANDSHAKE_RATE_LIMIT: "100"
+  PER_CONN_BUFFER_SIZE: "256"
+  HEARTBEAT_INTERVAL_SEC: "30"
+
+  # Prometheus configuration
+  PROMETHEUS_HOST: "prometheus-service.rtc.svc.cluster.local"
+  PROMETHEUS_PORT: "9090"
+
+---
+# Secret for sensitive configuration
+apiVersion: v1
+kind: Secret
+metadata:
+  name: rtc-secret
+  namespace: rtc
+  labels:
+    app.kubernetes.io/part-of: reactive-rtc
+type: Opaque
+stringData:
+  RING_SECRET: "change-this-to-a-secure-random-value-in-production"
+

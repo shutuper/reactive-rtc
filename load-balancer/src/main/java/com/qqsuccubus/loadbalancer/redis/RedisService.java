@@ -6,6 +6,7 @@ import com.qqsuccubus.core.util.JsonUtils;
 import com.qqsuccubus.loadbalancer.config.LBConfig;
 import io.lettuce.core.KeyValue;
 import io.lettuce.core.RedisClient;
+import io.lettuce.core.Value;
 import io.lettuce.core.api.StatefulRedisConnection;
 import io.lettuce.core.api.reactive.RedisReactiveCommands;
 import org.slf4j.Logger;
@@ -42,12 +43,25 @@ public class RedisService implements IRedisService {
         return commands.set(Keys.ringVersion(), JsonUtils.writeValueAsString(ringUpdate)).then();
     }
 
+    @Override
+    public Mono<ControlMessages.RingUpdate> getCurrentRingVersion() {
+        return commands.get(Keys.ringVersion())
+            .map(json -> JsonUtils.readValue(json, ControlMessages.RingUpdate.class));
+    }
+
     public Flux<List<String>> subscribeToHeartbeats() {
         return Flux.interval(Duration.ZERO, Duration.ofSeconds(20))
             .flatMap(tick -> commands.hgetall(Keys.heartbeats())
                 .map(KeyValue::getKey)
                 .collectList() // Collects keys for this specific tick only
             );
+    }
+
+    @Override
+    public Mono<String> getClientTargetNodeId(String clientId) {
+        return commands.hgetall(Keys.sess(clientId))
+            .collectMap(KeyValue::getKey, Value::getValue)
+            .mapNotNull(session -> session.get("nodeId"));
     }
 
     @Override

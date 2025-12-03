@@ -3,6 +3,7 @@ package com.qqsuccubus.socket.session;
 import com.qqsuccubus.core.msg.Envelope;
 import com.qqsuccubus.socket.config.SocketConfig;
 import reactor.core.publisher.Sinks;
+import reactor.netty.http.websocket.WebsocketOutbound;
 
 /**
  * Factory for creating Session objects (Single Responsibility Principle).
@@ -22,15 +23,16 @@ public class SessionFactory {
      *
      * @param userId       User identifier
      * @param resumeOffset last offset
+     * @param outbound websocket outbound channel
      * @return Session instance
      */
-    public Session createSession(String userId, int resumeOffset) {
+    public Session createSession(String userId, int resumeOffset, WebsocketOutbound outbound) {
         // Create outbound sink with backpressure buffer
         Sinks.Many<Envelope> sink = Sinks.many().multicast().onBackpressureBuffer(
             config.getPerConnBufferSize(), false
         );
 
-        return new Session(userId, resumeOffset, sink);
+        return new Session(userId, resumeOffset, sink, outbound);
     }
 
 }

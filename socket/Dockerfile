@@ -26,6 +26,10 @@ WORKDIR /app
 # Copy the shaded JAR
 COPY --from=build /workspace/socket/target/socket-1.0-SNAPSHOT.jar app.jar
 
+# Copy entrypoint script that sets hostname dynamically
+COPY socket/entrypoint.sh /app/entrypoint.sh
+RUN chmod +x /app/entrypoint.sh
+
 # Expose HTTP port
 EXPOSE 8080
 
@@ -33,10 +37,6 @@ EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=3s --start-period=10s --retries=3 \
     CMD curl -f http://localhost:8080/healthz || exit 1
 
-# Run the application with Virtual Threads enabled
-ENTRYPOINT ["java", \
-    "-XX:+UseZGC", \
-    "-XX:MaxRAMPercentage=75.0", \
-    "-Dreactor.schedulers.defaultBoundedElasticOnVirtualThreads=true", \
-    "-jar", "app.jar"]
+# Use entrypoint script to set hostname before starting JVM
+ENTRYPOINT ["/app/entrypoint.sh"]
 

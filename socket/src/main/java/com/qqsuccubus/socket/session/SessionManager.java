@@ -11,6 +11,7 @@ import org.slf4j.LoggerFactory;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.core.publisher.Sinks;
+import reactor.netty.http.websocket.WebsocketOutbound;
 
 import java.util.Map;
 import java.util.Set;
@@ -52,8 +53,8 @@ public class SessionManager implements ISessionManager {
 	}
 
 	@Override
-	public Mono<Session> createSession(String clientId, int resumeOffset) {
-		Session session = sessionFactory.createSession(clientId, resumeOffset);
+	public Mono<Session> createSession(String clientId, int resumeOffset, WebsocketOutbound outbound) {
+		Session session = sessionFactory.createSession(clientId, resumeOffset, outbound);
 
 		if (resumeOffset > 0) {
 			metricsService.recordResumeSuccess();
@@ -98,7 +99,7 @@ public class SessionManager implements ISessionManager {
 						redisService.deleteSession(clientId)
 				)
 				.then(Mono.just(session.getSink().tryEmitComplete()))
-				.then()
+                .then(session.getOutbound().sendClose())
 				.doOnSuccess(v -> {
 					log.debug("Session removed for user {}", clientId);
 				});

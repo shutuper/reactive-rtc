@@ -16,11 +16,30 @@ public final class Topics {
      */
     public static final String CONTROL_SCALE = "rtc.control.scale";
 
+    public static final String FORWARD_VIA_LB = "rtc.lb.forward";
+
     /**
-     * Control topic for drain signals (DrainSignal messages).
-     * Published by load-balancer, consumed by socket nodes for graceful disconnections.
+     * Prefix for per-node delivery topics.
+     * <p>
+     * Topic naming convention: delivery_node_{nodeId}
+     * Example: delivery_node_socket-abc123
+     * </p>
+     * <p>
+     * Each socket node has its own delivery topic for receiving messages
+     * destined to clients connected to that node.
+     * </p>
      */
-    public static final String CONTROL_DRAIN = "rtc.control.drain";
+    public static final String DELIVERY_TOPIC_PREFIX = "delivery_node_";
+
+    /**
+     * Generates the delivery topic name for a given node.
+     *
+     * @param nodeId Node identifier
+     * @return Topic name: delivery_node_{nodeId}
+     */
+    public static String deliveryTopicFor(String nodeId) {
+        return DELIVERY_TOPIC_PREFIX + nodeId;
+    }
 
 }
 

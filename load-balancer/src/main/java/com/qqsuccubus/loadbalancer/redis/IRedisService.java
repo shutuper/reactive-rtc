@@ -16,7 +16,15 @@ public interface IRedisService {
 
     Mono<Void> setCurrentRingVersion(ControlMessages.RingUpdate ringUpdate);
 
+    /**
+     * Gets the current ring version from Redis.
+     * Used by non-leader instances to initialize their ring.
+     */
+    Mono<ControlMessages.RingUpdate> getCurrentRingVersion();
+
     Flux<List<String>> subscribeToHeartbeats();
+
+    Mono<String> getClientTargetNodeId(String clientId);
 
     /**
      * Closes Redis connection.

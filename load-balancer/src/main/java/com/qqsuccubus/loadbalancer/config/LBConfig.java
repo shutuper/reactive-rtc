@@ -36,6 +36,13 @@ public class LBConfig {
     // Virtual Threads configuration
     boolean useVirtualThreads;
 
+    // Kubernetes configuration
+    String kubernetesNamespace;
+    boolean enableLeaderElection;
+    String socketWorkloadName;  // Name of socket Deployment
+    int socketMinReplicas;
+    int socketMaxReplicas;
+
     public static LBConfig fromEnv() {
         return LBConfig.builder()
             .nodeId(getEnv("NODE_ID", "lb-node-1"))
@@ -53,6 +60,11 @@ public class LBConfig {
             .prometheusHost(getEnv("PROMETHEUS_HOST", "prometheus"))
             .prometheusPort(Integer.parseInt(getEnv("PROMETHEUS_PORT", "9090")))
             .useVirtualThreads(Boolean.parseBoolean(getEnv("USE_VIRTUAL_THREADS", "true")))
+            .kubernetesNamespace(getEnv("KUBERNETES_NAMESPACE", "rtc"))
+            .enableLeaderElection(Boolean.parseBoolean(getEnv("ENABLE_LEADER_ELECTION", "true")))
+            .socketWorkloadName(getEnv("SOCKET_WORKLOAD_NAME", "socket"))
+            .socketMinReplicas(Integer.parseInt(getEnv("SOCKET_MIN_REPLICAS", "2")))
+            .socketMaxReplicas(Integer.parseInt(getEnv("SOCKET_MAX_REPLICAS", "50")))
             .build();
     }
 

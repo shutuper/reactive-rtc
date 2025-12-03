@@ -1,0 +1,220 @@
+---
+# Headless Service for stable DNS
+# CRITICAL: This enables DNS records for each pod: {hostname}.socket.rtc.svc.cluster.local
+# The pod's hostname is set dynamically via entrypoint.sh to match the pod name
+apiVersion: v1
+kind: Service
+metadata:
+  name: socket
+  namespace: rtc
+  labels:
+    app: socket
+spec:
+  clusterIP: None  # Headless service - enables per-pod DNS
+  selector:
+    app: socket
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080
+      protocol: TCP
+  # Publish addresses even for not-ready pods (for faster DNS propagation)
+  publishNotReadyAddresses: true
+
+---
+# Regular ClusterIP Service for round-robin load balancing (fallback)
+apiVersion: v1
+kind: Service
+metadata:
+  name: socket-service
+  namespace: rtc
+  labels:
+    app: socket
+spec:
+  type: ClusterIP
+  selector:
+    app: socket
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080
+      protocol: TCP
+
+---
+# Socket Deployment with dynamic DNS names
+#
+# DNS Setup for Deployment pods:
+# 1. subdomain: socket - matches headless service name
+# 2. hostname is set dynamically at container startup via entrypoint.sh
+# 3. entrypoint.sh runs `hostname $POD_NAME` before starting JVM
+# 4. Result: each pod gets DNS: {pod-name}.socket.rtc.svc.cluster.local
+#
+# This gives us StatefulSet-like DNS with Deployment flexibility (pod deletion costs)
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: socket
+  namespace: rtc
+  labels:
+    app: socket
+    app.kubernetes.io/name: socket
+    app.kubernetes.io/part-of: reactive-rtc
+spec:
+  replicas: 2  # Minimum 2 replicas, load-balancer will scale up to 50
+  selector:
+    matchLabels:
+      app: socket
+  template:
+    metadata:
+      labels:
+        app: socket
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8080"
+        prometheus.io/path: "/metrics"
+        # Default high deletion cost - load-balancer will lower this for least-loaded pods
+        controller.kubernetes.io/pod-deletion-cost: "1000000"
+    spec:
+      serviceAccountName: socket-sa
+
+      # CRITICAL: subdomain must match headless service name
+      # Combined with hostname (set in entrypoint.sh), this enables:
+      # DNS: {hostname}.socket.rtc.svc.cluster.local
+      subdomain: socket
+
+      affinity:
+        # Spread pods across nodes for high availability
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchLabels:
+                    app: socket
+                topologyKey: kubernetes.io/hostname
+
+      terminationGracePeriodSeconds: 330  # 5.5 minutes (5 min drain + 30s cleanup)
+
+      containers:
+        - name: socket
+          image: local/reactive-rtc-socket:latest
+          imagePullPolicy: Never
+          # Container runs with NET_ADMIN capability to set hostname
+          securityContext:
+            capabilities:
+              add:
+                - NET_ADMIN
+                - SYS_ADMIN
+          ports:
+            - containerPort: 8080
+              name: http
+              protocol: TCP
+          env:
+            # POD_NAME is used by entrypoint.sh to set hostname
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            # NODE_ID for application logic (same as pod name)
+            - name: NODE_ID
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            # Pod IP for fallback routing
+            - name: POD_IP
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.podIP
+            - name: PUBLIC_WS_URL
+              # Client will connect via: /ws/{NODE_ID}/connect
+              value: "wss://rtc.example.com/ws/$(NODE_ID)/connect"
+            - name: HTTP_PORT
+              value: "8080"
+            - name: KAFKA_BOOTSTRAP
+              valueFrom:
+                configMapKeyRef:
+                  name: rtc-config
+                  key: KAFKA_BOOTSTRAP
+            - name: REDIS_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: rtc-config
+                  key: REDIS_URL
+            - name: RING_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: rtc-secret
+                  key: RING_SECRET
+            - name: BUFFER_MAX
+              valueFrom:
+                configMapKeyRef:
+                  name: rtc-config
+                  key: BUFFER_MAX
+            - name: RESUME_TTL_SEC
+              valueFrom:
+                configMapKeyRef:
+                  name: rtc-config
+                  key: RESUME_TTL_SEC
+            - name: HANDSHAKE_RATE_LIMIT
+              valueFrom:
+                configMapKeyRef:
+                  name: rtc-config
+                  key: HANDSHAKE_RATE_LIMIT
+            - name: PER_CONN_BUFFER_SIZE
+              valueFrom:
+                configMapKeyRef:
+                  name: rtc-config
+                  key: PER_CONN_BUFFER_SIZE
+            - name: HEARTBEAT_INTERVAL_SEC
+              valueFrom:
+                configMapKeyRef:
+                  name: rtc-config
+                  key: HEARTBEAT_INTERVAL_SEC
+            - name: USE_VIRTUAL_THREADS
+              valueFrom:
+                configMapKeyRef:
+                  name: rtc-config
+                  key: USE_VIRTUAL_THREADS
+          resources:
+            requests:
+              cpu: 1000m
+              memory: 1Gi
+            limits:
+              cpu: 2000m
+              memory: 2Gi
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: 8080
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 2
+          lifecycle:
+            preStop:
+              httpGet:
+                path: /drain
+                port: 8080
+                scheme: HTTP
+              # Calls drain endpoint for 5-minute graceful shutdown
+
+---
+# PodDisruptionBudget for socket
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: socket-pdb
+  namespace: rtc
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: socket
