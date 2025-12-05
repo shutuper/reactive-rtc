@@ -77,6 +77,17 @@ JAVA_OPTS="$JAVA_OPTS -XX:+UseZGC"
 JAVA_OPTS="$JAVA_OPTS -XX:MaxDirectMemorySize=2g"
 JAVA_OPTS="$JAVA_OPTS -Djava.net.preferIPv4Stack=true"
 
+# Java 17+ module system opens required by Gatling
+JAVA_OPTS="$JAVA_OPTS --add-opens=java.base/java.lang=ALL-UNNAMED"
+JAVA_OPTS="$JAVA_OPTS --add-opens=java.base/java.lang.invoke=ALL-UNNAMED"
+JAVA_OPTS="$JAVA_OPTS --add-opens=java.base/java.lang.reflect=ALL-UNNAMED"
+JAVA_OPTS="$JAVA_OPTS --add-opens=java.base/java.io=ALL-UNNAMED"
+JAVA_OPTS="$JAVA_OPTS --add-opens=java.base/java.nio=ALL-UNNAMED"
+JAVA_OPTS="$JAVA_OPTS --add-opens=java.base/java.util=ALL-UNNAMED"
+JAVA_OPTS="$JAVA_OPTS --add-opens=java.base/java.util.concurrent=ALL-UNNAMED"
+JAVA_OPTS="$JAVA_OPTS --add-opens=java.base/sun.nio.ch=ALL-UNNAMED"
+JAVA_OPTS="$JAVA_OPTS --add-opens=java.base/sun.security.ssl=ALL-UNNAMED"
+
 # Convert message interval from ms to seconds
 MESSAGE_INTERVAL_SEC=$((MESSAGE_INTERVAL_MS / 1000))
 if [ "$MESSAGE_INTERVAL_SEC" -lt 1 ]; then
