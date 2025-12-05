@@ -17,9 +17,16 @@ echo "  WS_PROTOCOL:       ${WS_PROTOCOL}"
 echo "  TOTAL_CLIENTS:     ${TOTAL_CLIENTS}"
 echo "  RAMPUP_MINUTES:    ${RAMPUP_MINUTES}"
 echo "  DURATION_MINUTES:  ${DURATION_MINUTES}"
-echo "  MESSAGE_INTERVAL:  ${MESSAGE_INTERVAL_MS}ms"
+echo "  MESSAGE_INTERVAL:  ${MESSAGE_INTERVAL_MS}ms (${MESSAGE_INTERVAL_MS:-5000} / 1000 = interval in seconds)"
 echo "  CLIENT_PREFIX:     ${CLIENT_PREFIX}"
 echo ""
+
+# Set defaults if not provided
+TOTAL_CLIENTS=${TOTAL_CLIENTS:-100}
+RAMPUP_MINUTES=${RAMPUP_MINUTES:-1}
+DURATION_MINUTES=${DURATION_MINUTES:-5}
+MESSAGE_INTERVAL_MS=${MESSAGE_INTERVAL_MS:-5000}
+CLIENT_PREFIX=${CLIENT_PREFIX:-docker}
 
 # Build the gateway URL
 GATEWAY_URL="http://${TARGET_HOST}:${TARGET_PORT}"
@@ -70,13 +77,19 @@ JAVA_OPTS="$JAVA_OPTS -XX:+UseZGC"
 JAVA_OPTS="$JAVA_OPTS -XX:MaxDirectMemorySize=2g"
 JAVA_OPTS="$JAVA_OPTS -Djava.net.preferIPv4Stack=true"
 
-# Gatling system properties
+# Convert message interval from ms to seconds
+MESSAGE_INTERVAL_SEC=$((MESSAGE_INTERVAL_MS / 1000))
+if [ "$MESSAGE_INTERVAL_SEC" -lt 1 ]; then
+    MESSAGE_INTERVAL_SEC=1
+fi
+
+# Gatling system properties (must match ReactiveRtcLoadTest.java)
 GATLING_OPTS="-Dgateway.url=${GATEWAY_URL}"
 GATLING_OPTS="$GATLING_OPTS -Dws.gateway.url=${WS_GATEWAY_URL}"
-GATLING_OPTS="$GATLING_OPTS -Dtotal.clients=${TOTAL_CLIENTS}"
-GATLING_OPTS="$GATLING_OPTS -Drampup.minutes=${RAMPUP_MINUTES}"
-GATLING_OPTS="$GATLING_OPTS -Dduration.minutes=${DURATION_MINUTES}"
-GATLING_OPTS="$GATLING_OPTS -Dmessage.interval.ms=${MESSAGE_INTERVAL_MS}"
+GATLING_OPTS="$GATLING_OPTS -Dclients=${TOTAL_CLIENTS}"
+GATLING_OPTS="$GATLING_OPTS -Drampup=${RAMPUP_MINUTES}"
+GATLING_OPTS="$GATLING_OPTS -Dduration=${DURATION_MINUTES}"
+GATLING_OPTS="$GATLING_OPTS -Dinterval=${MESSAGE_INTERVAL_SEC}"
 GATLING_OPTS="$GATLING_OPTS -Dclient.prefix=${CLIENT_PREFIX}"
 
 echo "Starting Gatling test..."
@@ -87,11 +100,19 @@ echo "=========================================="
 echo ""
 
 # Find the jar file
+echo "Checking jar files..."
+ls -la /app/*.jar 2>/dev/null || echo "  No jar files in /app"
+ls -la /app/lib/ 2>/dev/null | head -5 || echo "  No lib directory or empty"
+
 JAR_FILE=$(ls /app/gatling-load-test-*.jar 2>/dev/null | head -1)
 if [ -z "$JAR_FILE" ]; then
     echo "ERROR: Could not find gatling-load-test jar"
+    echo "Contents of /app:"
+    ls -la /app/
     exit 1
 fi
+echo "Using jar: ${JAR_FILE}"
+echo ""
 
 # Run Gatling
 exec java $JAVA_OPTS $GATLING_OPTS \
