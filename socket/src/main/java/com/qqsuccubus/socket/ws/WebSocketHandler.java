@@ -86,8 +86,14 @@ public class WebSocketHandler {
 					);
 				})
 				.onErrorResume(err -> {
-					log.error("WebSocket error for clientId {}", clientId, err);
-					return outbound.sendClose();
+					// AbortedException is expected when client disconnects - don't log as error
+					if (err instanceof reactor.netty.channel.AbortedException
+						|| (err.getCause() != null && err.getCause() instanceof java.nio.channels.ClosedChannelException)) {
+						log.debug("Client {} disconnected: {}", clientId, err.getMessage());
+					} else {
+						log.error("WebSocket error for clientId {}", clientId, err);
+					}
+					return outbound.sendClose().onErrorResume(e -> Mono.empty());
 				});
 	}
 
@@ -115,6 +121,15 @@ public class WebSocketHandler {
 		).doOnNext(message -> {
 			// Record outbound WebSocket traffic
 			metricsService.recordNetworkOutboundWs(BytesUtils.getBytesLength(message));
+		}).onErrorResume(err -> {
+			// Handle errors gracefully - client may have disconnected
+			if (err instanceof reactor.netty.channel.AbortedException
+				|| (err.getCause() != null && err.getCause() instanceof java.nio.channels.ClosedChannelException)) {
+				log.debug("Outbound stream closed for client {}: {}", clientId, err.getMessage());
+			} else {
+				log.warn("Error in outbound stream for client {}: {}", clientId, err.getMessage());
+			}
+			return Flux.empty();
 		});
 	}
 

@@ -146,8 +146,8 @@ spec:
                   key: USE_VIRTUAL_THREADS
           resources:
             requests:
-              cpu: 500m
-              memory: 512Mi
+              cpu: 200m
+              memory: 256Mi
             limits:
               cpu: 1000m
               memory: 1Gi
@@ -215,7 +215,7 @@ spec:
     kind: Deployment
     name: load-balancer
   minReplicas: 1
-  maxReplicas: 5
+  maxReplicas: 2
   behavior:
     scaleDown:
       stabilizationWindowSeconds: 300  # 5 minutes
@@ -239,11 +239,11 @@ spec:
         name: cpu
         target:
           type: Utilization
-          averageUtilization: 60
+          averageUtilization: 75
     - type: Resource
       resource:
         name: memory
         target:
           type: Utilization
-          averageUtilization: 60
+          averageUtilization: 75
 

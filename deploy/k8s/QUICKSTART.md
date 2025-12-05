@@ -25,8 +25,19 @@ minikube kubectl -- delete namespace rtc
 
 ### 1. Start Minikube
 
+**Basic setup:**
 ```bash
 minikube start --driver=docker --cpus=4 --memory=8192
+```
+
+**High connection setup (1M+ WebSocket connections):**
+```bash
+# Use the helper script for full configuration
+./minikube-high-conn.sh
+
+# Or manually with unsafe sysctls enabled:
+minikube start --driver=docker --cpus=10 --memory=15900 \
+  --extra-config=kubelet.allowed-unsafe-sysctls=net.core.somaxconn,net.ipv4.tcp_tw_reuse
 ```
 
 ### 2. Run Deploy Script
@@ -189,3 +200,45 @@ minikube start --driver=docker --cpus=4 --memory=8192
 | Redis | `redis-master.rtc.svc.cluster.local:6379` |
 | Prometheus | `prometheus-service.rtc.svc.cluster.local:9090` |
 | Nginx | `nginx-gateway-service.rtc.svc.cluster.local:80` |
+
+## High Connection Configuration (1M+ connections)
+
+For supporting 1M+ WebSocket connections per pod, the following sysctls are configured:
+
+### Pod-level sysctls (in `04-socket.yaml`)
+```yaml
+securityContext:
+  sysctls:
+    - name: net.ipv4.ip_local_port_range  # Ephemeral ports
+      value: "1024 65535"
+    - name: net.core.somaxconn            # Max listen backlog
+      value: "65535"
+    - name: net.ipv4.tcp_tw_reuse         # Reuse TIME_WAIT sockets
+      value: "1"
+```
+
+### Kubelet configuration (required for unsafe sysctls)
+```bash
+# When starting minikube, allow unsafe sysctls:
+minikube start \
+  --extra-config=kubelet.allowed-unsafe-sysctls=net.core.somaxconn,net.ipv4.tcp_tw_reuse
+```
+
+### Verify sysctls in running pod
+```bash
+# Check if sysctls are applied
+kubectl exec -n rtc $(kubectl get pod -n rtc -l app=socket -o name | head -1) -- \
+  sh -c 'echo "somaxconn=$(cat /proc/sys/net/core/somaxconn)"; echo "ip_local_port_range=$(cat /proc/sys/net/ipv4/ip_local_port_range)"'
+```
+
+### If SysctlForbidden errors occur
+```bash
+# 1. Delete the minikube cluster
+minikube delete
+
+# 2. Restart with unsafe sysctls allowed
+./minikube-high-conn.sh
+
+# 3. Redeploy
+./deploy.sh
+```

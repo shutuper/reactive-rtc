@@ -2,57 +2,118 @@
 
 Load testing for reactive-rtc WebSocket system running in Minikube.
 
-## Prerequisites
+## Running in Kubernetes (Recommended)
+
+The easiest way to run load tests is directly in the Kubernetes cluster using the provided script:
+
+### Quick Start
+
+```bash
+cd deploy/k8s
+
+# Run with defaults (100 clients, 5 minutes)
+./run-gatling.sh
+
+# Run with custom parameters
+./run-gatling.sh -n my-test -c 1000 -d 10
+
+# Run multiple tests in parallel (different user prefixes)
+./run-gatling.sh -n team-a -c 20000 -r 3 -d 5 &
+./run-gatling.sh -n team-b -c 20000 -r 3 -d 5 &
+./run-gatling.sh -n team-c -c 20000 -r 3 -d 5 &
+./run-gatling.sh -n team-d -c 20000 -r 3 -d 5 &
+./run-gatling.sh -n team-e -c 20000 -r 3 -d 5 &
+wait
+```
+
+### Script Options
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `-n, --name NAME` | Test name/prefix (used for job name and client IDs) | `gatling-<timestamp>` |
+| `-c, --clients NUM` | Number of concurrent WebSocket clients | `100` |
+| `-r, --rampup MIN` | Ramp-up time in minutes | `1` |
+| `-d, --duration MIN` | Test duration in minutes | `5` |
+| `-i, --interval SEC` | Seconds between messages per client | `3` |
+| `-k, --keep-alive` | Keep pod running after test (for debugging) | `false` |
+
+### Managing Tests
+
+```bash
+# Watch test logs
+minikube kubectl -- logs -n rtc -l app=gatling-loadtest -f
+
+# Copy results to local machine
+POD=$(minikube kubectl -- get pod -n rtc -l app=gatling-loadtest -o jsonpath='{.items[0].metadata.name}')
+minikube kubectl -- cp rtc/$POD:/app/results ./gatling-results
+
+# List all running tests
+minikube kubectl -- get jobs -n rtc -l app=gatling-loadtest
+
+# Delete a specific test
+minikube kubectl -- delete job gatling-my-test -n rtc
+
+# Delete all completed tests
+minikube kubectl -- delete jobs -n rtc -l app=gatling-loadtest
+```
+
+---
+
+## Running Locally (Alternative)
+
+You can also run Gatling directly from your machine against the port-forwarded cluster.
+
+### Prerequisites
 
 - Java 21
 - Maven 3.6+
 - Running reactive-rtc cluster in Minikube (see `deploy/k8s/QUICKSTART.md`)
+- Port-forwarding already set up (done automatically by `deploy.sh`)
 
 ## Quick Start with Minikube
 
-### 1. Start Port Forward
+### 1. Verify Port Forward is Running
 
-First, expose the nginx gateway from Minikube:
+The `deploy.sh` script automatically sets up port-forwarding. Verify it's working:
 
 ```bash
-# In a separate terminal, run:
-minikube kubectl -- port-forward -n rtc svc/nginx-gateway-service 8080:80
+# Check if nginx is accessible
+curl 'http://localhost:8080/healthz'
+
+# Should return: healthy
 ```
 
-Keep this running during the test.
+If not running, start it manually:
+```bash
+minikube kubectl -- port-forward -n rtc svc/nginx-gateway-service 8080:80 &
+```
 
-### 2. Build the Project
+### 2. Run the Load Test
 
 ```bash
 cd gatling-load-test
-mvn clean compile
+
+# Small test (10 users, 2 minutes)
+mvn gatling:test -Dclients=10 -Drampup=1 -Dduration=2
+
+# Medium test (100 users, 5 minutes)  
+mvn gatling:test -Dclients=100 -Drampup=1 -Dduration=5
+
+# Larger test (500 users, 10 minutes)
+mvn gatling:test -Dclients=500 -Drampup=2 -Dduration=10
 ```
 
-### 3. Run Small Test (10 users)
+### One-Liner Commands
 
 ```bash
-mvn gatling:test \
-  -Dclients=10 \
-  -Drampup=1 \
-  -Dduration=2
-```
+# Quick smoke test (10 users)
+cd gatling-load-test && mvn gatling:test -Dclients=10 -Drampup=1 -Dduration=1
 
-### 4. Run Medium Test (100 users)
+# Standard test (100 users)
+cd gatling-load-test && mvn gatling:test -Dclients=100 -Drampup=1 -Dduration=5
 
-```bash
-mvn gatling:test \
-  -Dclients=100 \
-  -Drampup=1 \
-  -Dduration=5
-```
-
-### 5. Run Larger Test (1000 users)
-
-```bash
-mvn gatling:test \
-  -Dclients=1000 \
-  -Drampup=2 \
-  -Dduration=10
+# Stress test (1000 users) - may need more minikube resources
+cd gatling-load-test && mvn gatling:test -Dclients=1000 -Drampup=3 -Dduration=10
 ```
 
 ## Configuration Options

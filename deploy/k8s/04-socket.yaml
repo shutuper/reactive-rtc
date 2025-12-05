@@ -50,6 +50,11 @@ spec:
 # 4. Result: each pod gets DNS: {pod-name}.socket.rtc.svc.cluster.local
 #
 # This gives us StatefulSet-like DNS with Deployment flexibility (pod deletion costs)
+#
+# HIGH CONNECTION SUPPORT (1M+ connections per pod):
+# - Kernel sysctls for high connection count
+# - Increased file descriptors (ulimits)
+# - Optimized TCP settings
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -82,6 +87,21 @@ spec:
       # DNS: {hostname}.socket.rtc.svc.cluster.local
       subdomain: socket
 
+      # Sysctls for high connection count (1M+ connections)
+      # NOTE: Requires kubelet to allow these unsafe sysctls:
+      #   minikube start --extra-config=kubelet.allowed-unsafe-sysctls=net.core.somaxconn,net.ipv4.tcp_tw_reuse
+      # Or for existing cluster, update kubelet config and restart
+      securityContext:
+        sysctls:
+          # Safe sysctls (namespaced, allowed by default)
+          - name: net.ipv4.ip_local_port_range
+            value: "1024 65535"
+          # Unsafe sysctls (require kubelet allowlist)
+          - name: net.core.somaxconn
+            value: "65535"
+          - name: net.ipv4.tcp_tw_reuse
+            value: "1"
+
       affinity:
         # Spread pods across nodes for high availability
         podAntiAffinity:
@@ -99,12 +119,15 @@ spec:
         - name: socket
           image: local/reactive-rtc-socket:latest
           imagePullPolicy: Never
-          # Container runs with NET_ADMIN capability to set hostname
+          # Container security context for high connection count
           securityContext:
             capabilities:
               add:
                 - NET_ADMIN
                 - SYS_ADMIN
+                - SYS_RESOURCE  # For setting ulimits
+            # Run as root to modify ulimits (can be changed if using init container)
+            runAsUser: 0
           ports:
             - containerPort: 8080
               name: http
@@ -177,8 +200,8 @@ spec:
                   key: USE_VIRTUAL_THREADS
           resources:
             requests:
-              cpu: 1000m
-              memory: 1Gi
+              cpu: 256m
+              memory: 512Mi
             limits:
               cpu: 2000m
               memory: 2Gi

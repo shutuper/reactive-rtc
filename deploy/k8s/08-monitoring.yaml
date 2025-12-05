@@ -105,6 +105,9 @@ spec:
               value: "http://localhost:3000"
             - name: GF_INSTALL_PLUGINS
               value: ""
+            # Set default home dashboard
+            - name: GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH
+              value: "/var/lib/grafana/dashboards/reactive-rtc-complete.json"
           volumeMounts:
             - name: grafana-storage
               mountPath: /var/lib/grafana
@@ -212,7 +215,9 @@ data:
           path: /var/lib/grafana/dashboards
 
 ---
-# Grafana Dashboards ConfigMap (sample dashboard)
+# Grafana Dashboards ConfigMap
+# NOTE: This ConfigMap is created/updated by deploy.sh from deploy/grafana-dashboard.json
+# The placeholder below is replaced during deployment
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -221,83 +226,8 @@ metadata:
   labels:
     app: grafana
 data:
-  reactive-rtc-overview.json: |
-    {
-      "dashboard": {
-        "title": "Reactive RTC Overview",
-        "tags": ["reactive-rtc", "websocket"],
-        "timezone": "browser",
-        "panels": [
-          {
-            "title": "Socket Nodes - Active Connections",
-            "type": "graph",
-            "targets": [
-              {
-                "expr": "rtc_socket_active_connections",
-                "legendFormat": "{{instance}}"
-              }
-            ],
-            "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0}
-          },
-          {
-            "title": "Socket Nodes - P95 Latency",
-            "type": "graph",
-            "targets": [
-              {
-                "expr": "rtc_socket_latency{quantile=\"0.95\"}",
-                "legendFormat": "{{instance}}"
-              }
-            ],
-            "gridPos": {"h": 8, "w": 12, "x": 12, "y": 0}
-          },
-          {
-            "title": "Socket Nodes - CPU Usage",
-            "type": "graph",
-            "targets": [
-              {
-                "expr": "rate(process_cpu_seconds_total{app=\"socket\"}[5m]) * 100",
-                "legendFormat": "{{instance}}"
-              }
-            ],
-            "gridPos": {"h": 8, "w": 12, "x": 0, "y": 8}
-          },
-          {
-            "title": "Socket Nodes - Memory Usage",
-            "type": "graph",
-            "targets": [
-              {
-                "expr": "process_resident_memory_bytes{app=\"socket\"} / 1024 / 1024",
-                "legendFormat": "{{instance}} (MB)"
-              }
-            ],
-            "gridPos": {"h": 8, "w": 12, "x": 12, "y": 8}
-          },
-          {
-            "title": "Load Balancer - Ring Nodes",
-            "type": "graph",
-            "targets": [
-              {
-                "expr": "rtc_lb_ring_nodes",
-                "legendFormat": "Active Nodes"
-              }
-            ],
-            "gridPos": {"h": 8, "w": 12, "x": 0, "y": 16}
-          },
-          {
-            "title": "Load Balancer - Leader Status",
-            "type": "stat",
-            "targets": [
-              {
-                "expr": "rtc_lb_is_leader",
-                "legendFormat": "{{instance}}"
-              }
-            ],
-            "gridPos": {"h": 8, "w": 12, "x": 12, "y": 16}
-          }
-        ],
-        "schemaVersion": 16,
-        "version": 0
-      }
-    }
-
+  # Dashboard files are loaded from deploy/grafana-dashboard.json via kubectl
+  # This file serves as a placeholder - actual dashboard is created by deploy.sh
+  placeholder.json: |
+    {"placeholder": true}
 

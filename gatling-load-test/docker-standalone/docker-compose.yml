@@ -1,0 +1,48 @@
+# Docker Compose for running multiple Gatling load tests in parallel
+# 
+# Usage:
+#   TARGET_HOST=192.168.1.100 docker-compose up --scale gatling=3
+#
+# Or with custom settings:
+#   TARGET_HOST=192.168.1.100 TOTAL_CLIENTS=10000 docker-compose up --scale gatling=5
+#
+version: '3.8'
+
+services:
+  gatling:
+    build:
+      context: ../..
+      dockerfile: gatling-load-test/docker-standalone/Dockerfile
+    environment:
+      - TARGET_HOST=${TARGET_HOST:-host.docker.internal}
+      - TARGET_PORT=${TARGET_PORT:-8080}
+      - WS_PROTOCOL=${WS_PROTOCOL:-ws}
+      - TOTAL_CLIENTS=${TOTAL_CLIENTS:-1000}
+      - RAMPUP_MINUTES=${RAMPUP_MINUTES:-2}
+      - DURATION_MINUTES=${DURATION_MINUTES:-5}
+      - MESSAGE_INTERVAL_MS=${MESSAGE_INTERVAL_MS:-5000}
+      # CLIENT_PREFIX is auto-generated per instance below
+    volumes:
+      - ./results:/app/results
+    # For high connection counts
+    ulimits:
+      nofile:
+        soft: 1048576
+        hard: 1048576
+    sysctls:
+      - net.ipv4.ip_local_port_range=1024 65535
+    # Each container gets a unique prefix
+    command: []
+    deploy:
+      resources:
+        limits:
+          cpus: '4'
+          memory: 8G
+        reservations:
+          cpus: '2'
+          memory: 4G
+
+
+
+
+

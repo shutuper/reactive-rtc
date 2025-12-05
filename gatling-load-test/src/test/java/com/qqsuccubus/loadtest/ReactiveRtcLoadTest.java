@@ -14,32 +14,49 @@ import static io.gatling.javaapi.http.HttpDsl.*;
 
 /**
  * Reactive RTC Load Test for Minikube/Kubernetes deployment.
- * 
+ *
  * The test flow:
  * 1. Call load-balancer /ws/connect?clientId=xxx to get assigned socket node
  * 2. Connect to WebSocket at /ws/{nodeId}/connect?clientId=xxx via nginx
  * 3. Send messages periodically
- * 
+ *
  * Usage:
  *   # First, port-forward nginx gateway:
  *   minikube kubectl -- port-forward -n rtc svc/nginx-gateway-service 8080:80
- *   
+ *
  *   # Then run test:
  *   mvn gatling:test -Dclients=100 -Drampup=1 -Dduration=5
  */
 public class ReactiveRtcLoadTest extends Simulation {
 
     // Configuration - defaults work with minikube port-forward
-    private static final String GATEWAY_URL = System.getProperty("gateway.url", "http://localhost:8080");
-    private static final String WS_GATEWAY_URL = System.getProperty("ws.gateway.url", "ws://localhost:8080");
-    private static final int TARGET_CLIENTS = Integer.parseInt(System.getProperty("clients", "100"));
-    private static final int RAMP_UP_MINUTES = Integer.parseInt(System.getProperty("rampup", "1"));
-    private static final int TEST_DURATION_MINUTES = Integer.parseInt(System.getProperty("duration", "5"));
-    private static final int REQUESTED_INTERVAL = Integer.parseInt(System.getProperty("interval", "3"));
-    private static final int MAX_RECONNECT_ATTEMPTS = Integer.parseInt(System.getProperty("maxReconnectAttempts", "10"));
+    // Can be overridden via -D system properties or environment variables
+    private static final String GATEWAY_URL = getConfig("gateway.url", "GATEWAY_URL", "http://localhost:8080");
+    private static final String WS_GATEWAY_URL = getConfig("ws.gateway.url", "WS_GATEWAY_URL", "ws://localhost:8080");
+    private static final int TARGET_CLIENTS = Integer.parseInt(getConfig("clients", "CLIENTS", "10000"));
+    private static final int RAMP_UP_MINUTES = Integer.parseInt(getConfig("rampup", "RAMPUP", "1"));
+    private static final int TEST_DURATION_MINUTES = Integer.parseInt(getConfig("duration", "DURATION", "5"));
+    private static final int REQUESTED_INTERVAL = Integer.parseInt(getConfig("interval", "INTERVAL", "3"));
+    private static final int MAX_RECONNECT_ATTEMPTS = Integer.parseInt(getConfig("maxReconnectAttempts", "MAX_RECONNECT_ATTEMPTS", "10"));
+
+    // Client prefix for parallel test runs (allows multiple tests to run simultaneously)
+    private static final String CLIENT_PREFIX = getConfig("client.prefix", "CLIENT_PREFIX", "user");
+
+    // Helper to get config from system property or environment variable
+    private static String getConfig(String sysProp, String envVar, String defaultValue) {
+        String value = System.getProperty(sysProp);
+        if (value != null && !value.isEmpty()) {
+            return value;
+        }
+        value = System.getenv(envVar);
+        if (value != null && !value.isEmpty()) {
+            return value;
+        }
+        return defaultValue;
+    }
 
     // MPS limiting (max 1000 MPS) - automatically adjust interval if needed
-    private static final int MAX_MPS = 1000;
+    private static final int MAX_MPS = 300;
     private static final int MESSAGE_INTERVAL_SECONDS;
 
     static {
@@ -63,12 +80,13 @@ public class ReactiveRtcLoadTest extends Simulation {
         .acceptHeader("application/json")
         .userAgentHeader("Gatling-LoadTest/1.0");
 
-    // Feeder for sequential client IDs
+    // Feeder for sequential client IDs with configurable prefix
+    // Allows multiple parallel test runs with different prefixes
     Iterator<Map<String, Object>> clientIdFeeder =
         Stream.generate(() -> {
             long id = clientCounter.getAndIncrement();
             return Map.<String, Object>of(
-                "clientId", "user" + id,
+                "clientId", CLIENT_PREFIX + "-" + id,
                 "clientIdNum", id
             );
         }).iterator();
@@ -85,6 +103,7 @@ public class ReactiveRtcLoadTest extends Simulation {
             return session;
         })
         // Step 1: Call load-balancer /api/v1/resolve to get assigned socket node
+        // Response: {"nodeId":"socket-xxx","podIp":"10.x.x.x","wsUrl":"/ws/ip/10.x.x.x/connect"}
         .tryMax(5).on(
             exec(
                 http("Resolve Node")
@@ -93,6 +112,8 @@ public class ReactiveRtcLoadTest extends Simulation {
                     .check(status().is(200))
                     .check(bodyString().saveAs("responseBody"))
                     .check(jsonPath("$.nodeId").optional().saveAs("nodeId"))
+                    .check(jsonPath("$.wsUrl").optional().saveAs("wsUrl"))
+                    .check(jsonPath("$.podIp").optional().saveAs("podIp"))
             )
             .pause(Duration.ofMillis(100))
         )
@@ -116,12 +137,18 @@ public class ReactiveRtcLoadTest extends Simulation {
                 return session.markAsFailed();
             }
 
-            // Build WebSocket URL: /ws/{nodeId}/connect?clientId=xxx
-            // Nginx will route this to the specific socket node based on nodeId
+            // Extract wsUrl from response (contains /ws/ip/{podIp}/connect)
+            // The load-balancer returns: {"nodeId":"socket-xxx","podIp":"10.x.x.x","wsUrl":"/ws/ip/10.x.x.x/connect"}
+            String wsPath = session.getString("wsUrl");
+            if (wsPath == null || wsPath.isEmpty()) {
+                // Fallback to round-robin if wsUrl not in response
+                wsPath = "/ws/connect";
+            }
+
             Integer reconnectAttempts = session.getInt("reconnectAttempts");
             boolean isReconnect = reconnectAttempts != null && reconnectAttempts > 0;
 
-            String wsPath = "/ws/" + nodeId + "/connect";
+            // Build full WebSocket URL with query params
             String wsUrl = isReconnect
                 ? WS_GATEWAY_URL + wsPath + "?clientId=" + clientId + "&resumeOffset=1"
                 : WS_GATEWAY_URL + wsPath + "?clientId=" + clientId;

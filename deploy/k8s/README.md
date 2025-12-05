@@ -1,5 +1,12 @@
 # Kubernetes Deployment Guide - Reactive RTC
 
+```
+minikube start --driver=docker --cpus=10 --memory=15900
+minikube kubectl -- logs -n rtc -l app=load-balancer --tail=5000000
+minikube dashboard
+minikube kubectl -- get pods -n rtc
+minikube delete
+```
 This guide provides comprehensive instructions for deploying the Reactive RTC WebSocket system to Kubernetes with full autoscaling, leader election, and monitoring capabilities.
 
 ## Table of Contents

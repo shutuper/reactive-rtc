@@ -142,8 +142,8 @@ public class PrometheusQueryService {
      * @return Mono<Double> total active connections
      */
     public Mono<Double> getTotalActiveConnections() {
-        // Filter by websocket-server and aggregate by node to avoid double-counting
-        String query = "sum(max by (node_id) (reactor_netty_http_server_connections_active{job=\"socket-nodes\",component=\"websocket-server\"}))";
+        // Sum connections across all socket nodes
+        String query = "sum(reactor_netty_http_server_connections_active{job=\"socket-nodes\"})";
         return query(query)
                 .map(result -> result.getValue().orElse(0.0))
                 .doOnNext(value -> log.info("Total connections: {}", value));
@@ -151,14 +151,12 @@ public class PrometheusQueryService {
 
     /**
      * Gets active connections per node.
-     * Filters for websocket-server component to get actual client connections.
      *
      * @return Mono<Map<String, Double>> map of nodeId -> connection count
      */
     public Mono<Map<String, Double>> getActiveConnectionsByNode() {
-        // Filter by websocket-server component to get only client WebSocket connections
-        // Use max to handle multiple server instances per node
-        String query = "max by (node_id) (reactor_netty_http_server_connections_active{job=\"socket-nodes\",component=\"websocket-server\"})";
+        // Get connections per node using node_id label
+        String query = "sum by (node_id) (reactor_netty_http_server_connections_active{job=\"socket-nodes\"})";
         return query(query)
                 .map(result -> result.getValuesByLabel("node_id"))
                 .doOnNext(values -> log.info("Connections by node: {}", values));

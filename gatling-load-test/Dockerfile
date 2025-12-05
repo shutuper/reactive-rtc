@@ -1,33 +1,49 @@
-# Dockerfile for Gatling Load Testing
-FROM maven:3.9-eclipse-temurin-21
+# Gatling Load Test Docker Image
+FROM maven:3.9-eclipse-temurin-21-alpine AS build
 
-WORKDIR /test
+WORKDIR /app
 
-# Copy pom and source
+# Copy pom.xml first for dependency caching
 COPY pom.xml .
+
+# Download dependencies
+RUN mvn dependency:resolve -q
+
+# Copy source code
 COPY src ./src
 
-# Download dependencies first (for better caching)
-RUN mvn dependency:go-offline
+# Build the jar with dependencies
+RUN mvn package -DskipTests -q
 
-# Configure JVM for high-concurrency testing
-ENV JAVA_OPTS="-XX:+UseZGC -Xms2g -Xmx4g -Dio.netty.eventLoopThreads=32"
+# Runtime stage
+FROM eclipse-temurin:21-jre-alpine
 
-# Mark that we're running in Docker (used by test to determine URLs)
-ENV DOCKER_ENV=true
+WORKDIR /app
 
-# Default Gatling parameters (can be overridden via environment variables)
-ENV LB_URL=http://load-balancer:8080
-ENV CLIENTS=50000
-ENV RAMPUP=10
-ENV DURATION=20
+# Install required tools
+RUN apk add --no-cache curl bash netcat-openbsd
+
+# Create directories
+RUN mkdir -p /app/lib /app/results
+
+# Copy built artifacts
+COPY --from=build /app/target/gatling-load-test-*.jar /app/
+COPY --from=build /app/target/dependency/ /app/lib/
+
+# Set high ulimits for load testing
+ENV GATLING_OPTS="-Xms512m -Xmx2g -XX:+UseZGC"
+
+# Default test parameters
+ENV CLIENTS=100
+ENV RAMPUP=1
+ENV DURATION=5
 ENV INTERVAL=3
+ENV GATEWAY_URL=http://nginx-gateway-service.rtc.svc.cluster.local
+ENV WS_GATEWAY_URL=ws://nginx-gateway-service.rtc.svc.cluster.local
+ENV CLIENT_PREFIX=k8s
 
-# Run Gatling test
-ENTRYPOINT mvn gatling:test \
-    -Dlb.url=${LB_URL} \
-    -Dclients=${CLIENTS} \
-    -Drampup=${RAMPUP} \
-    -Dduration=${DURATION} \
-    -Dinterval=${INTERVAL}
+# Entry point script
+COPY entrypoint.sh /app/entrypoint.sh
+RUN chmod +x /app/entrypoint.sh
 
+ENTRYPOINT ["/app/entrypoint.sh"]

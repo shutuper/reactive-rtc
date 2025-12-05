@@ -6,6 +6,7 @@ import reactor.core.publisher.Mono;
 
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * Service for retrieving comprehensive per-node metrics from Prometheus.
@@ -22,18 +23,20 @@ public class NodeMetricsService {
      * Gets CPU usage per node (0.0 to 1.0).
      */
     private Mono<Map<String, Double>> getCpuByNode() {
+        // Use node_id label which is set by socket nodes
         String query = "process_cpu_usage{job=\"socket-nodes\"}";
         return queryService.query(query)
-                .map(r -> r.getValuesByLabel("instance"));
+                .map(r -> r.getValuesByLabel("node_id"));
     }
 
     /**
      * Gets memory usage per node (0.0 to 1.0).
      */
     private Mono<Map<String, Double>> getMemoryByNode() {
-        String query = "sum by (instance) (jvm_memory_used_bytes{job=\"socket-nodes\",area=\"heap\"}) / sum by (instance) (jvm_memory_max_bytes{job=\"socket-nodes\",area=\"heap\"})";
+        // Use node_id label for grouping
+        String query = "sum by (node_id) (jvm_memory_used_bytes{job=\"socket-nodes\",area=\"heap\"}) / sum by (node_id) (jvm_memory_max_bytes{job=\"socket-nodes\",area=\"heap\"})";
         return queryService.query(query)
-                .map(r -> r.getValuesByLabel("instance"));
+                .map(r -> r.getValuesByLabel("node_id"));
     }
 
     /**
@@ -97,19 +100,17 @@ public class NodeMetricsService {
 
             Map<String, NodeMetrics> result = new HashMap<>();
 
-            for (String nodeId : connections.keySet()) {
+            // Collect all node IDs from all metric sources
+            Set<String> allNodeIds = new java.util.HashSet<>();
+            allNodeIds.addAll(connections.keySet());
+            allNodeIds.addAll(cpu.keySet());
+            allNodeIds.addAll(memory.keySet());
+
+            log.debug("Found node IDs from metrics: connections={}, cpu={}, memory={}",
+                connections.keySet(), cpu.keySet(), memory.keySet());
+
+            for (String nodeId : allNodeIds) {
                 String consumerGroup = "socket-delivery-" + nodeId;
-                String instanceHint = nodeId.replace("socket-node-", "socket-");
-
-                Double cpuVal = cpu.entrySet().stream()
-                        .filter(e -> e.getKey().contains(instanceHint))
-                        .map(Map.Entry::getValue)
-                        .findFirst().orElse(0.0);
-
-                Double memVal = memory.entrySet().stream()
-                        .filter(e -> e.getKey().contains(instanceHint))
-                        .map(Map.Entry::getValue)
-                        .findFirst().orElse(0.0);
 
                 NodeMetrics metrics = NodeMetrics.builder()
                         .nodeId(nodeId)
@@ -117,20 +118,23 @@ public class NodeMetricsService {
                         .mps(throughput.getOrDefault(nodeId, 0.0))
                         .p95LatencyMs(latency.getOrDefault(nodeId, 0.0) * 1000)
                         .kafkaTopicLagLatencyMs(kafkaTopicLagLatency.getOrDefault(nodeId, 0.0))
-                        .cpu(cpuVal)
-                        .mem(memVal)
+                        .cpu(cpu.getOrDefault(nodeId, 0.0))
+                        .mem(memory.getOrDefault(nodeId, 0.0))
                         .kafkaConsumerLag(kafkaLag.getOrDefault(consumerGroup, 0.0).intValue())
-                        .networkInboundBytesPerSec(networkIn.getOrDefault(nodeId, 0.0))
-                        .networkOutboundBytesPerSec(networkOut.getOrDefault(nodeId, 0.0))
+                        .networkInboundBytesPerSec(networkIn != null ? networkIn.getOrDefault(nodeId, 0.0) : 0.0)
+                        .networkOutboundBytesPerSec(networkOut != null ? networkOut.getOrDefault(nodeId, 0.0) : 0.0)
                         .healthy(true)
                         .build();
 
                 result.put(nodeId, metrics);
-                log.info("Built metrics for node {}: {}", nodeId, metrics);
+                log.debug("Built metrics for node {}: {}", nodeId, metrics);
             }
 
-            log.info("Retrieved comprehensive metrics for {} nodes", result.size());
+            log.info("Retrieved comprehensive metrics for {} nodes: {}", result.size(), result.keySet());
             return result;
+        }).onErrorResume(err -> {
+            log.error("Failed to get node metrics: {}", err.getMessage(), err);
+            return Mono.just(new HashMap<>());
         });
     }
 }

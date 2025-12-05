@@ -1,0 +1,14 @@
+---
+# Gatling Load Test ConfigMap (default values)
+# These can be overridden by the run-gatling.sh script
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: gatling-config
+  namespace: rtc
+  labels:
+    app: gatling-loadtest
+data:
+  # Gateway URLs (internal cluster DNS)
+  GATEWAY_URL: "http://nginx-gateway-service.rtc.svc.cluster.local"
+  WS_GATEWAY_URL: "ws://nginx-gateway-service.rtc.svc.cluster.local"

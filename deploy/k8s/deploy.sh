@@ -41,10 +41,33 @@ fi
 print_section "Checking Minikube"
 if ! minikube status &> /dev/null; then
     print_error "Minikube is not running!"
-    echo "Start it with: minikube start --driver=docker --cpus=4 --memory=8192"
+    echo ""
+    echo "Start it with high-connection support (recommended):"
+    echo "  minikube start --driver=docker --cpus=10 --memory=15900 \\"
+    echo "    --extra-config=kubelet.allowed-unsafe-sysctls=net.core.somaxconn,net.ipv4.tcp_tw_reuse"
+    echo ""
+    echo "Or basic start:"
+    echo "  minikube start --driver=docker --cpus=10 --memory=15900"
     exit 1
 fi
 print_success "Minikube is running"
+
+# Check if unsafe sysctls are allowed (for high connection count)
+print_section "Checking Sysctl Support"
+SYSCTL_CHECK=$(minikube ssh "cat /var/lib/kubelet/config.yaml 2>/dev/null | grep -A5 allowedUnsafeSysctls" 2>/dev/null || echo "")
+if [[ "$SYSCTL_CHECK" == *"somaxconn"* ]]; then
+    print_success "Unsafe sysctls are allowed (high connection support enabled)"
+else
+    print_warning "Unsafe sysctls not configured. Socket pods may have limited connections."
+    echo ""
+    echo "For 1M+ connections, restart minikube with:"
+    echo "  minikube delete"
+    echo "  minikube start --driver=docker --cpus=10 --memory=15900 \\"
+    echo "    --extra-config=kubelet.allowed-unsafe-sysctls=net.core.somaxconn,net.ipv4.tcp_tw_reuse"
+    echo ""
+    echo "Continuing with limited sysctl support..."
+    echo ""
+fi
 
 # Enable minikube addons
 print_section "Enabling Minikube Addons"
@@ -65,7 +88,7 @@ print_section "Deploying Kafka (Strimzi)"
 if ! $KUBECTL get deployment strimzi-cluster-operator -n ${NAMESPACE} &> /dev/null; then
     echo "Installing Strimzi Kafka operator..."
     $KUBECTL create -f 'https://strimzi.io/install/latest?namespace=rtc' -n ${NAMESPACE} 2>/dev/null || true
-    
+
     echo "Waiting for Strimzi operator..."
     sleep 10
     $KUBECTL wait --for=condition=ready pod -l name=strimzi-cluster-operator -n ${NAMESPACE} --timeout=180s || true
@@ -118,7 +141,7 @@ spec:
     topicOperator: {}
     userOperator: {}
 EOF
-    
+
     echo "Waiting for Kafka cluster to be ready (this may take 2-3 minutes)..."
     sleep 30
     $KUBECTL wait kafka/kafka --for=condition=Ready -n ${NAMESPACE} --timeout=300s || {
@@ -242,8 +265,19 @@ print_success "Nginx gateway deployed"
 $KUBECTL apply -f 07-prometheus.yaml
 print_success "Prometheus deployed"
 
+# Create Grafana dashboard ConfigMap from JSON file
+echo "Creating Grafana dashboard ConfigMap..."
+$KUBECTL delete configmap grafana-dashboards -n ${NAMESPACE} --ignore-not-found=true
+$KUBECTL create configmap grafana-dashboards \
+    --from-file=reactive-rtc-complete.json=../grafana-dashboard.json \
+    -n ${NAMESPACE}
+print_success "Grafana dashboard ConfigMap created"
+
 $KUBECTL apply -f 08-monitoring.yaml
 print_success "Grafana & Kafka Exporter deployed"
+
+# Restart Grafana to pick up the new dashboard
+$KUBECTL rollout restart deployment/grafana -n ${NAMESPACE} 2>/dev/null || true
 
 # Wait for pods
 print_section "Waiting for Pods"
